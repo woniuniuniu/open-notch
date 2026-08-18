@@ -7,9 +7,11 @@
 [![License](https://img.shields.io/badge/license-GPL--3.0-only-blue)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.5.0-2ea44f)](https://github.com/woniuniuniu/open-notch)
 
-一个真正完全开源的 macOS 菜单栏管理工具。Open Notch 使用原生 AppKit 与 SwiftUI，帮助你整理、隐藏和恢复菜单栏图标，并针对 macOS 26 中会持续重建的 OneDrive 菜单栏图标提供专门的身份恢复与固定策略。
+**整理你的 Mac 菜单栏。开源、原生，也能把 OneDrive 稳稳钉住。**
 
-Open Notch 是独立项目，致敬 Bartender 与 Ice 的产品方向和使用体验，但不属于 Apple、Bartender、Ice、Microsoft 或 OneDrive，也没有包含 Bartender 的源代码。
+Open Notch 是一个完全开源的 **Mac 菜单栏管理工具**。它可以隐藏、显示和整理菜单栏图标，让常用图标留在该在的位置，让你的 Mac 顶栏重新变得干净、好用。
+
+它致敬 Bartender 和 Ice，主体功能从零开始开发，是一个独立的开源项目。
 
 ## 界面预览
 
@@ -36,19 +38,26 @@ Open Notch 是独立项目，致敬 Bartender 与 Ice 的产品方向和使用�
 
 ## 为什么做 Open Notch
 
-macOS 没有公开的跨进程菜单栏排序 API。菜单栏图标可能来自普通应用、系统服务或 Control Center 托管窗口；OneDrive 在新版 macOS 上尤其容易因为持续重建而丢失原先的窗口身份。Open Notch 从这个实际问题出发，提供一套透明、可检查、可修改的菜单栏管理实现：
+从 macOS 15 Sequoia 开始，苹果连续调整菜单栏相关机制。很多原本好用的工具突然失效，开发者只能不断追着系统更新。
 
-- **完全开源**：源代码、构建脚本、许可证和第三方归属都在仓库中，不依赖闭源后台服务。
-- **原生 macOS 体验**：设置窗口采用 SwiftUI/AppKit，支持系统风格的侧边栏、浅色/深色模式和中英文切换。
-- **OneDrive-aware**：通过语义 Bundle Identifier、实时几何位置和本机持久绑定恢复 OneDrive 身份，而不是依赖易变的 `Item-0` 标题或窗口编号。
-- **输入事件有边界**：只读扫描不会注入鼠标移动；只有在确认布局偏差后，才会执行一次有限的 Command-拖动事务。
+过去这些年，Mac 用户习惯花钱购买各种菜单栏工具。每个产品都有自己的方向和技术路线，但真正能让大家一起维护、一起把它做强的开源选择并不多。
+
+所以我们想得很简单：**为什么不直接开源？**
+
+我们用 AI，从零 vibe coding 了 Open Notch 的主体功能。代码公开、问题公开、路线也公开。任何人都可以免费使用，也可以一起改进。它要做的第一件事，就是让普通用户可以简单地隐藏、显示和整理自己的菜单栏图标。
+
+第二个问题来自 OneDrive。我自己长期使用 OneDrive，但它的菜单栏图标经常跳来跳去：有时被隐藏，有时又自己跑出来，很多菜单栏工具都无法稳定识别。所以我们又做了 OneDrive 守护功能，尽可能把它“锁”在菜单栏里。
+
+这只是开始。只要大家愿意提需求、报问题，我们就会继续更新。目标也很直接：**把 Open Notch 做成世界上最好用的开源 Mac 菜单栏管理工具。**
 
 ## 致敬与项目边界
 
-Open Notch 借鉴了两个成熟产品的启发，但与它们保持清晰的工程和法律边界：
+Open Notch 向两个优秀产品学习：
 
-- **Bartender** 让“整理菜单栏、保持常用项目可见”成为清晰的产品类别。Open Notch 致敬这种工作流，但没有复制 Bartender 的代码、资源或专有实现。
-- **Ice** 展示了开源菜单栏工具的组织方式。Open Notch 的 `Sources/TargetedEventRouter.swift` 包含从 Ice `MenuBar/MenuBarItems/MenuBarItemManager.swift` 事件路由机制改写而来的兼容层；该部分保留 GPL-3.0 归属并在 [`NOTICE.md`](NOTICE.md) 中列出来源。
+- **[Bartender](https://www.macbartender.com/)** 强调“掌控你的菜单栏”，让隐藏、显示、搜索和整理菜单栏图标成为一套完整体验。
+- **[Ice](https://icemenubar.app/)** 把自己定义为一款强大的菜单栏管理工具，并把隐藏、显示、排列图标等能力做成了开源项目。
+
+Open Notch 致敬它们的产品方向，也认真学习它们的表达方式。我们没有复制 Bartender 的代码、资源或专有实现。`Sources/TargetedEventRouter.swift` 中有一小部分事件路由机制改写自 Ice，并按照 GPL-3.0 保留了完整归属，详见 [`NOTICE.md`](NOTICE.md)。
 
 Open Notch 是独立实现，不是 Bartender 或 Ice 的官方版本，也不代表 Apple、Microsoft 或 OneDrive。
 
@@ -58,15 +67,17 @@ Open Notch 是独立实现，不是 Bartender 或 Ice 的官方版本，也不�
 - Always Pinned 项目：常用项目可以保持在菜单栏可见区域。
 - 隐藏区展开、收起和恢复。
 - OneDrive 动态菜单栏图标守护与手动“立即复位”。
-- 状态栏菜单：展开隐藏区、扫描项目、打开设置、重启 Open Notch、退出。
+- 菜单栏图标菜单：展开隐藏区、扫描项目、打开设置、重启 Open Notch、退出。
 - 默认英文，可手动切换简体中文。
 - Light / Dark 外观模式。
 - 登录时打开与自动恢复菜单栏布局。
 - 辅助功能权限状态检查和系统设置快捷入口。
 
+在 Apple 的官方语境里，Mac 屏幕顶部叫 **菜单栏（menu bar）**，右侧这些图标叫 **菜单栏项目（menu bar items）**。中文用户也常把它叫作状态栏或顶栏，所以你也可以把 Open Notch 理解为 Mac 状态栏图标管理工具。
+
 ## 工作方式
 
-Open Notch 的持续监测负责**观察**状态栏项目；布局协调器只有在连续观察确认布局偏差后，才会请求移动。移动使用一次范围明确的 Accessibility Command-拖动事务，并在用户正在使用鼠标或键盘时延后。监测本身不会持续控制鼠标，也不会模拟随机鼠标移动。
+Open Notch 的持续监测负责**观察**菜单栏项目；布局协调器只有在连续观察确认布局偏差后，才会请求移动。移动使用一次范围明确的 Accessibility Command-拖动事务，并在用户正在使用鼠标或键盘时延后。监测本身不会持续控制鼠标，也不会模拟随机鼠标移动。
 
 macOS 26 中，OneDrive 的状态项可能暂时由 Control Center 托管并失去稳定的 Accessibility 语义。Open Notch 会结合 OneDrive 的语义 Bundle Identifier、实时几何位置和本地持久绑定恢复逻辑身份；无法确认身份的匿名 Control Center 窗口不会被伪装成可管理项目。
 
@@ -76,7 +87,7 @@ macOS 26 中，OneDrive 的状态项可能暂时由 Control Center 托管并失�
 - macOS 14 或更高版本（已针对 macOS 26 进行验证）
 - 在“系统设置 > 隐私与安全性 > 辅助功能”中允许 Open Notch
 
-辅助功能权限是 macOS 允许应用读取其他进程状态栏项目并执行明确拖动事务的系统入口。Open Notch 不会借此读取键盘内容、鼠标轨迹或其他应用的数据。
+辅助功能权限是 macOS 允许应用读取其他进程菜单栏项目并执行明确拖动事务的系统入口。Open Notch 不会借此读取键盘内容、鼠标轨迹或其他应用的数据。
 
 ## 安装与首次运行
 
