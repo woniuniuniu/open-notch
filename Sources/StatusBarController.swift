@@ -63,7 +63,9 @@ final class StatusBarController: NSObject {
             boundaryItem.length = 10_000
         }
 
-        toggleItem.button?.contentTintColor = expanded ? .controlAccentColor : .labelColor
+        // Template images are tinted by the menu bar, independently of the
+        // appearance selected for the settings window.
+        toggleItem.button?.contentTintColor = nil
         toggleItem.button?.toolTip = "Open Notch"
     }
 
@@ -166,7 +168,12 @@ final class StatusBarController: NSObject {
 
     private func symbol(_ name: String, pointSize: CGFloat, weight: NSFont.Weight) -> NSImage? {
         let configuration = NSImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
-        return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
+        guard let image = NSImage(
+            systemSymbolName: name,
+            accessibilityDescription: nil
+        )?.withSymbolConfiguration(configuration) else { return nil }
+        image.isTemplate = true
+        return image
     }
 
     private func rawWindow(for item: NSStatusItem) -> RawStatusWindow? {
