@@ -66,11 +66,11 @@ final class StatusBarController: NSObject {
         // Template images are tinted by the menu bar, independently of the
         // appearance selected for the settings window.
         toggleItem.button?.contentTintColor = nil
-        toggleItem.button?.toolTip = "Open Notch"
+        toggleItem.button?.toolTip = L("App Name")
     }
 
     func updateMenu(isExpanded: Bool, guardianEnabled: Bool, hasAccessibilityPermission: Bool) {
-        let menu = NSMenu(title: "Open Notch")
+        let menu = NSMenu(title: L("App Name"))
         menu.autoenablesItems = false
 
         let titleItem = NSMenuItem(title: L("Status Menu Title"), action: nil, keyEquivalent: "")
@@ -154,8 +154,8 @@ final class StatusBarController: NSObject {
         button.imagePosition = .imageOnly
         button.image = symbol("menubar.rectangle", pointSize: 14, weight: .semibold)
         button.setAccessibilityIdentifier("OpenNotch.Toggle")
-        button.setAccessibilityLabel("Open Notch")
-        button.toolTip = "Open Notch"
+        button.setAccessibilityLabel(L("App Name"))
+        button.toolTip = L("App Name")
     }
 
     private func captureBoundaryWidthConstraint() {

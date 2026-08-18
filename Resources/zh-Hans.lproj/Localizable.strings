@@ -14,6 +14,7 @@
 "Clock" = "时钟";
 "Collapse" = "收起";
 "Collapse Hidden Items" = "收起隐藏图标";
+"Collapsed" = "已收起";
 "Continuous monitoring" = "持续监测";
 "Control Center" = "控制中心";
 "Could not move %@. Check Accessibility permission." = "未能移动 %@，请确认辅助功能权限";
@@ -24,6 +25,7 @@
 "Expand" = "展开";
 "Expand Hidden Items" = "展开隐藏图标";
 "Expand hidden section" = "展开隐藏区";
+"Expanded" = "已展开";
 "Find OneDrive" = "查找 OneDrive";
 "First upgrade: identifying menu bar items" = "首次升级，正在绑定菜单栏图标";
 "Focus" = "专注模式";
@@ -38,6 +40,7 @@
 "Identified" = "已识别";
 "Identity rebinding" = "身份重绑定";
 "Interface" = "界面";
+"Interface and behavior" = "界面与运行方式";
 "Keep OneDrive Pinned" = "OneDrive 持续固定";
 "Keep OneDrive pinned" = "持续固定 OneDrive";
 "Keep Visible" = "保持显示";
@@ -48,6 +51,7 @@
 "Light" = "浅色";
 "Manual scan" = "手动扫描";
 "Menu Bar" = "菜单栏";
+"Menu bar at a glance" = "菜单栏状态一览";
 "Menu Bar Items" = "菜单栏图标";
 "Minimum System" = "最低系统";
 "No manageable items" = "没有可管理的图标";
@@ -74,14 +78,14 @@
 "Post-move verification" = "移动后校验";
 "Post-rebind verification" = "重绑定后校验";
 "Project" = "项目";
-"Quit Open Notch" = "退出 Open Notch";
+"Quit Open Notch" = "退出若栏";
 "Recent Activity" = "最近活动";
 "Recent Events" = "最近记录";
 "Recheck" = "重新检查";
 "Rescan" = "重新扫描";
 "Reset Now" = "立即复位";
 "Reset OneDrive manually" = "手动复位 OneDrive";
-"Restart Open Notch" = "重新启动 Open Notch";
+"Restart Open Notch" = "重新启动若栏";
 "Restart failed: %@" = "重新启动失败：%@";
 "Scan" = "扫描";
 "Scan Now" = "立即扫描";
@@ -90,7 +94,7 @@
 "Settings…" = "设置…";
 "Startup scan" = "启动扫描";
 "Status" = "状态";
-"Status Menu Title" = "Open Notch  开放刘海";
+"Status Menu Title" = "若栏";
 "System state changed" = "系统状态变化";
 "This program comes with absolutely no warranty. You may redistribute it under GNU GPL v3." = "本程序不提供任何担保。你可以按照 GNU GPL v3 的条款重新分发。";
 "Unknown" = "未知";
@@ -100,4 +104,9 @@
 "View License" = "查看许可证";
 "View Notices" = "查看声明";
 "Visible" = "显示";
+"App Name" = "若栏";
+"Credits" = "鸣谢";
+"Developer" = "开发者";
+"Chinese localization contributor" = "中文本地化贡献者";
+"Xiaohongshu @Snail's Tech Notes" = "小红书@蜗牛的科技笔记";
 "%d manageable items" = "%d 个可管理图标";

@@ -14,6 +14,7 @@
 "Clock" = "Clock";
 "Collapse" = "Collapse";
 "Collapse Hidden Items" = "Collapse Hidden Items";
+"Collapsed" = "Collapsed";
 "Continuous monitoring" = "Continuous monitoring";
 "Control Center" = "Control Center";
 "Could not move %@. Check Accessibility permission." = "Could not move %@. Check Accessibility permission.";
@@ -24,6 +25,7 @@
 "Expand" = "Expand";
 "Expand Hidden Items" = "Expand Hidden Items";
 "Expand hidden section" = "Expand hidden section";
+"Expanded" = "Expanded";
 "Find OneDrive" = "Find OneDrive";
 "First upgrade: identifying menu bar items" = "First upgrade: identifying menu bar items";
 "Focus" = "Focus";
@@ -38,6 +40,7 @@
 "Identified" = "Identified";
 "Identity rebinding" = "Identity rebinding";
 "Interface" = "Interface";
+"Interface and behavior" = "Interface and behavior";
 "Keep OneDrive Pinned" = "Keep OneDrive Pinned";
 "Keep OneDrive pinned" = "Keep OneDrive pinned";
 "Keep Visible" = "Keep Visible";
@@ -48,6 +51,7 @@
 "Light" = "Light";
 "Manual scan" = "Manual scan";
 "Menu Bar" = "Menu Bar";
+"Menu bar at a glance" = "Menu bar at a glance";
 "Menu Bar Items" = "Menu Bar Items";
 "Minimum System" = "Minimum System";
 "No manageable items" = "No manageable items";
@@ -100,4 +104,9 @@
 "View License" = "View License";
 "View Notices" = "View Notices";
 "Visible" = "Visible";
+"App Name" = "Open Notch";
+"Credits" = "Credits";
+"Developer" = "Developer";
+"Chinese localization contributor" = "Chinese localization contributor";
+"Xiaohongshu @Snail's Tech Notes" = "Xiaohongshu @Snail's Tech Notes";
 "%d manageable items" = "%d manageable items";

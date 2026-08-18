@@ -33,20 +33,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settingsWindow == nil {
             let view = SettingsRootView().environmentObject(AppModel.shared)
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 900, height: 620),
-                styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                contentRect: NSRect(x: 0, y: 0, width: 470, height: 650),
+                styleMask: [.titled, .closable, .fullSizeContentView],
                 backing: .buffered,
                 defer: false
             )
-            window.title = "Open Notch"
+            window.title = L("App Name")
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
-            window.toolbarStyle = .unified
-            window.titlebarSeparatorStyle = .automatic
+            window.titlebarSeparatorStyle = .none
             window.tabbingMode = .disallowed
             window.isReleasedWhenClosed = false
             window.collectionBehavior = [.moveToActiveSpace]
-            window.minSize = NSSize(width: 820, height: 540)
+            window.backgroundColor = .clear
+            window.isOpaque = false
+            window.hasShadow = true
+            window.isMovableByWindowBackground = true
+            window.minSize = NSSize(width: 470, height: 650)
+            window.maxSize = NSSize(width: 470, height: 650)
             window.contentView = NSHostingView(rootView: view)
             window.center()
             settingsWindow = window
