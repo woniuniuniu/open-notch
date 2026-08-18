@@ -7,9 +7,11 @@ Language: [简体中文](README.md) | English
 [![License](https://img.shields.io/badge/license-GPL--3.0-only-blue)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.5.0-2ea44f)](https://github.com/woniuniuniu/open-notch)
 
-A genuinely open-source macOS menu bar manager. Open Notch uses native AppKit and SwiftUI to organize, hide, and restore menu bar items, with a dedicated identity-recovery and pinning strategy for OneDrive items that are continuously rebuilt on macOS 26.
+**Take control of your Mac menu bar. Open source, native, and built to keep OneDrive in place.**
 
-Open Notch is an independent project inspired by the product direction and workflow of Bartender and Ice. It is not affiliated with Apple, Bartender, Ice, Microsoft, or OneDrive, and it contains no Bartender source code.
+Open Notch is a fully open-source **menu bar manager for Mac**. Hide, show, and organize menu bar icons, keep important items where they belong, and make your menu bar clean and useful again.
+
+It is a tribute to Bartender and Ice, with its core features built from scratch as an independent open-source project.
 
 ## Screenshots
 
@@ -36,19 +38,26 @@ These images were captured from the running app and cover both languages and app
 
 ## Why Open Notch
 
-macOS has no public cross-process API for rearranging status items. Items can belong to ordinary applications, system services, or Control Center-hosted windows; OneDrive is particularly likely to lose a stable window identity when it is rebuilt on newer macOS releases. Open Notch addresses that practical problem with an inspectable, modifiable implementation:
+Starting with macOS 15 Sequoia, Apple kept changing how the menu bar works. Many existing tools broke overnight, and developers had to race to catch up.
 
-- **Fully open source:** source, build script, license, and third-party notices are in this repository. There is no closed backend service.
-- **Native macOS UI:** a SwiftUI/AppKit settings window with a system-style sidebar, Light/Dark appearance, and English/Simplified Chinese language switching.
-- **OneDrive-aware identity recovery:** semantic bundle identity, live geometry, and persisted local bindings keep the policy attached to the logical OneDrive item instead of a transient `Item-0` title or window number.
-- **Bounded input events:** read-only discovery never injects mouse movement. A single bounded Command-drag transaction is requested only after a layout mismatch is confirmed.
+For years, Mac users have paid for different menu bar apps. Each one has its own ideas and technical approach, but there are not many open-source projects where everyone can maintain the product and make it better together.
+
+So we asked a simple question: **why not open-source it?**
+
+We used AI to vibe-code the core of Open Notch from scratch. The code is open, the issues are open, and the roadmap is open. Anyone can use it for free or help improve it. Its first job is simple: make it easy for anyone to hide, show, and organize their menu bar icons.
+
+The second problem came from OneDrive. I use it every day, but its menu bar icon often jumps around. Sometimes it gets hidden; sometimes it suddenly comes back. Many menu bar tools cannot identify it reliably. So we built a OneDrive guardian that tries to keep it pinned in place.
+
+This is only the beginning. If people request a feature or report a problem, we will keep improving it. The goal is simple: **build the world's best open-source menu bar manager for Mac.**
 
 ## Tribute and boundaries
 
-Open Notch acknowledges two important influences while keeping its engineering and legal boundaries explicit:
+Open Notch learns from two excellent products:
 
-- **Bartender** established a clear product category around organizing the menu bar and keeping important items visible. Open Notch pays tribute to that workflow, but includes no Bartender code, assets, or proprietary implementation.
-- **Ice** demonstrates how an open-source menu bar utility can be structured. `Sources/TargetedEventRouter.swift` contains a rewritten compatibility layer derived from the event-routing mechanism in Ice's `MenuBar/MenuBarItems/MenuBarItemManager.swift`. The derived portion retains GPL-3.0 attribution, detailed in [`NOTICE.md`](NOTICE.md).
+- **[Bartender](https://www.macbartender.com/)** promises total control over the menu bar, bringing hiding, showing, search, and organization into one polished experience.
+- **[Ice](https://icemenubar.app/)** describes itself as a powerful menu bar management tool and makes hiding, showing, and arranging menu bar items open source.
+
+Open Notch pays tribute to their product direction and learns from the way they explain it. It contains no Bartender code, assets, or proprietary implementation. A small event-routing mechanism in `Sources/TargetedEventRouter.swift` is rewritten from Ice and retains full GPL-3.0 attribution in [`NOTICE.md`](NOTICE.md).
 
 Open Notch is an independent implementation, not an official Bartender or Ice release, and it does not represent Apple, Microsoft, or OneDrive.
 
@@ -63,6 +72,8 @@ Open Notch is an independent implementation, not an official Bartender or Ice re
 - Light and Dark appearance modes.
 - Open at Login and automatic layout restoration.
 - Accessibility status check with a direct System Settings shortcut.
+
+Apple calls the strip at the top of the Mac screen the **menu bar**, and the icons on its right side **menu bar items**. That is why “menu bar manager” is the clearest English description of Open Notch.
 
 ## How it works
 
