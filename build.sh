@@ -66,22 +66,9 @@ codesign \
   --identifier com.openbartender.OpenNotch \
   --requirements '=designated => identifier "com.openbartender.OpenNotch"' \
   "$APP"
+codesign --verify --deep --strict "$APP"
+ditto -c -k --norsrc --noextattr --keepParent "$APP" "$STAGE/Open Notch.zip"
 ditto --norsrc --noextattr "$APP" "$OUTPUT_APP"
-# The workspace is backed by a macOS file provider that can re-add Finder
-# metadata during the copy. Remove it from the final app before the final
-# signature is created.
-xattr -cr "$OUTPUT_APP" || true
-xattr -r -d com.apple.FinderInfo "$OUTPUT_APP" 2>/dev/null || true
-xattr -r -d 'com.apple.fileprovider.fpfs#P' "$OUTPUT_APP" 2>/dev/null || true
-codesign \
-  --force \
-  --deep \
-  --sign - \
-  --identifier com.openbartender.OpenNotch \
-  --requirements '=designated => identifier "com.openbartender.OpenNotch"' \
-  "$OUTPUT_APP"
-ditto -c -k --norsrc --noextattr --keepParent "$OUTPUT_APP" "$OUTPUT_ZIP"
-xattr -r -d com.apple.FinderInfo "$OUTPUT_APP" 2>/dev/null || true
-xattr -r -d 'com.apple.fileprovider.fpfs#P' "$OUTPUT_APP" 2>/dev/null || true
+ditto --norsrc --noextattr "$STAGE/Open Notch.zip" "$OUTPUT_ZIP"
 
 echo "$OUTPUT_APP"
