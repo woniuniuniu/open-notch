@@ -1,74 +1,171 @@
-# Open Notch
+# Open Notch（开放刘海）
 
-Open Notch is an open-source macOS menu bar manager with a OneDrive-aware
-layout guardian. It uses native AppKit and SwiftUI, keeps the menu bar stable
-when hosted status items are rebuilt, and provides a status item menu for
-expand, scan, restart, settings, and quit actions.
+语言：简体中文 | [English](README.en.md)
 
-The app defaults to English and can be switched to Simplified Chinese from
-General settings. Light and Dark appearance modes apply to both the settings
-window and the status item menu.
+[![macOS](https://img.shields.io/badge/macOS-14%2B-111111?logo=apple)](https://www.apple.com/macos/)
+[![Swift](https://img.shields.io/badge/Swift-5-FA7343?logo=swift&logoColor=white)](https://www.swift.org/)
+[![License](https://img.shields.io/badge/license-GPL--3.0-only-blue)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.5.0-2ea44f)](https://github.com/woniuniuniu/open-notch)
 
-## Requirements
+一个真正完全开源的 macOS 菜单栏管理工具。Open Notch 使用原生 AppKit 与 SwiftUI，帮助你整理、隐藏和恢复菜单栏图标，并针对 macOS 26 中会持续重建的 OneDrive 菜单栏图标提供专门的身份恢复与固定策略。
+
+Open Notch 是独立项目，致敬 Bartender 与 Ice 的产品方向和使用体验，但不属于 Apple、Bartender、Ice、Microsoft 或 OneDrive，也没有包含 Bartender 的源代码。
+
+## 界面预览
+
+截图来自真实运行中的 Open Notch，覆盖中英文、浅色与深色模式：
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/open-notch-overview-light-zh.png" alt="Open Notch 中文浅色总览" /></td>
+    <td width="50%"><img src="docs/images/open-notch-menu-items-light-en.png" alt="Open Notch English light Menu Bar Items" /></td>
+  </tr>
+  <tr>
+    <td align="center">中文 · 浅色 · 总览</td>
+    <td align="center">English · Light · Menu Bar Items</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/open-notch-onedrive-dark-zh.png" alt="Open Notch 中文深色 OneDrive 守护" /></td>
+    <td width="50%"><img src="docs/images/open-notch-general-dark-en.png" alt="Open Notch English dark General" /></td>
+  </tr>
+  <tr>
+    <td align="center">中文 · 深色 · OneDrive 守护</td>
+    <td align="center">English · Dark · General</td>
+  </tr>
+</table>
+
+## 为什么做 Open Notch
+
+macOS 没有公开的跨进程菜单栏排序 API。菜单栏图标可能来自普通应用、系统服务或 Control Center 托管窗口；OneDrive 在新版 macOS 上尤其容易因为持续重建而丢失原先的窗口身份。Open Notch 从这个实际问题出发，提供一套透明、可检查、可修改的菜单栏管理实现：
+
+- **完全开源**：源代码、构建脚本、许可证和第三方归属都在仓库中，不依赖闭源后台服务。
+- **原生 macOS 体验**：设置窗口采用 SwiftUI/AppKit，支持系统风格的侧边栏、浅色/深色模式和中英文切换。
+- **OneDrive-aware**：通过语义 Bundle Identifier、实时几何位置和本机持久绑定恢复 OneDrive 身份，而不是依赖易变的 `Item-0` 标题或窗口编号。
+- **输入事件有边界**：只读扫描不会注入鼠标移动；只有在确认布局偏差后，才会执行一次有限的 Command-拖动事务。
+
+## 致敬与项目边界
+
+Open Notch 借鉴了两个成熟产品的启发，但与它们保持清晰的工程和法律边界：
+
+- **Bartender** 让“整理菜单栏、保持常用项目可见”成为清晰的产品类别。Open Notch 致敬这种工作流，但没有复制 Bartender 的代码、资源或专有实现。
+- **Ice** 展示了开源菜单栏工具的组织方式。Open Notch 的 `Sources/TargetedEventRouter.swift` 包含从 Ice `MenuBar/MenuBarItems/MenuBarItemManager.swift` 事件路由机制改写而来的兼容层；该部分保留 GPL-3.0 归属并在 [`NOTICE.md`](NOTICE.md) 中列出来源。
+
+Open Notch 是独立实现，不是 Bartender 或 Ice 的官方版本，也不代表 Apple、Microsoft 或 OneDrive。
+
+## 功能
+
+- 菜单栏项目发现、搜索以及 Visible / Hidden 管理。
+- Always Pinned 项目：常用项目可以保持在菜单栏可见区域。
+- 隐藏区展开、收起和恢复。
+- OneDrive 动态菜单栏图标守护与手动“立即复位”。
+- 状态栏菜单：展开隐藏区、扫描项目、打开设置、重启 Open Notch、退出。
+- 默认英文，可手动切换简体中文。
+- Light / Dark 外观模式。
+- 登录时打开与自动恢复菜单栏布局。
+- 辅助功能权限状态检查和系统设置快捷入口。
+
+## 工作方式
+
+Open Notch 的持续监测负责**观察**状态栏项目；布局协调器只有在连续观察确认布局偏差后，才会请求移动。移动使用一次范围明确的 Accessibility Command-拖动事务，并在用户正在使用鼠标或键盘时延后。监测本身不会持续控制鼠标，也不会模拟随机鼠标移动。
+
+macOS 26 中，OneDrive 的状态项可能暂时由 Control Center 托管并失去稳定的 Accessibility 语义。Open Notch 会结合 OneDrive 的语义 Bundle Identifier、实时几何位置和本地持久绑定恢复逻辑身份；无法确认身份的匿名 Control Center 窗口不会被伪装成可管理项目。
+
+## 使用要求
 
 - Apple silicon Mac
-- macOS 14 or later (macOS 26 is supported)
-- Accessibility access for Open Notch in System Settings > Privacy & Security
-  > Accessibility
+- macOS 14 或更高版本（已针对 macOS 26 进行验证）
+- 在“系统设置 > 隐私与安全性 > 辅助功能”中允许 Open Notch
 
-Open Notch is not affiliated with Apple, Bartender, Ice, Microsoft, or
-OneDrive. Apple, macOS, OneDrive, Bartender, and Ice are trademarks or
-projects of their respective owners.
+辅助功能权限是 macOS 允许应用读取其他进程状态栏项目并执行明确拖动事务的系统入口。Open Notch 不会借此读取键盘内容、鼠标轨迹或其他应用的数据。
 
-## Install
+## 安装与首次运行
 
-Clone this repository, run the build script below, move `build/Open Notch.app`
-to `/Applications`, and launch it. Grant Accessibility access when prompted.
-Do not run Ice, Bartender, or another menu bar manager at the same time; those
-tools can move each other's status items.
+仓库当前提供可复现的本地构建流程。下载源码后运行：
 
-## Build locally
+```zsh
+git clone https://github.com/woniuniuniu/open-notch.git
+cd open-notch
+./build.sh
+```
 
-The project uses the Apple Command Line Tools and does not require a full Xcode
-project:
+脚本会生成 `build/Open Notch.app` 和 `build/Open Notch.zip`。将 App 移到 `/Applications` 后启动，在系统设置中授予辅助功能权限，再回到 Open Notch 的 General / 通用页面点击 **Recheck / 重新检查**。
+
+本地构建使用 ad-hoc 签名，仅适合开发和个人测试。面向其他用户分发时，需要使用自己的 Developer ID 签名并完成 Apple notarization。
+
+不要同时运行 Ice、Bartender 或其他菜单栏管理器；多个工具会互相移动状态栏项目，导致布局和权限诊断失真。
+
+## 开发
+
+项目只需要 Apple Command Line Tools，不要求提交一个完整的 Xcode 工程：
 
 ```zsh
 ./build.sh
 ```
 
-The script creates `build/Open Notch.app` and `build/Open Notch.zip`. The app is
-ad-hoc signed for local testing. A Developer ID signature and notarization are
-required for distribution outside a development machine.
+主要目录：
 
-## How it works
+```text
+Sources/OpenNotchApp.swift       应用入口与状态栏菜单
+Sources/SettingsView.swift       原生 SwiftUI 设置界面
+Sources/MenuBarDiscovery.swift   菜单栏项目发现与身份解析
+Sources/LayoutReconciler.swift   布局策略与 OneDrive 恢复协调
+Sources/MenuBarMoveEngine.swift  有界 Accessibility 移动事务
+Sources/TargetedEventRouter.swift Ice-derived 事件路由兼容层
+Resources/*.lproj                English / 简体中文本地化
+Tools/make_icon.swift             应用图标生成
+build.sh                          可复现构建、签名与打包
+```
 
-macOS does not expose a public API for rearranging another process's status
-items. When a move is required, Open Notch performs one bounded, native-style
-Command-drag transaction through the Accessibility API. Read-only discovery and
-the continuous monitor never synthesize mouse movement. The layout reconciler
-requires a stable observation before it requests a move, and the move engine
-defers while the user is interacting with the mouse or keyboard.
+## 隐私与安全
 
-On macOS 26, OneDrive status items can be hosted by Control Center and can
-temporarily lose their Accessibility identity. Open Notch matches the semantic
-OneDrive bundle identifier, live geometry, and persisted window bindings so the
-policy follows the logical item rather than a transient window number or
-`Item-0` title. Anonymous Control Center windows are not exposed as manageable
-items.
+Open Notch 不联网、不收集分析数据、不包含遥测或账号系统。设置和身份绑定只保存在本机 `UserDefaults`。辅助功能仅用于发现菜单栏项目、读取必要的窗口几何信息，以及执行上文说明的明确 Command-拖动。
 
-## Privacy
+请不要在 issue 或 pull request 中上传 Accessibility dump、屏幕截图、个人路径、凭据或其他机器特有信息。安全问题请参阅 [`SECURITY.md`](SECURITY.md)。
 
-Open Notch does not make network requests or collect analytics. Accessibility is
-used only to inspect menu bar items and perform the explicit Command-drag
-transactions described above. Preferences and identity bindings stay in the
-local `UserDefaults` store.
+## 兼容性与已知限制
 
-## License and acknowledgements
+- macOS 不提供稳定的跨进程状态栏排序 API，因此系统更新或宿主应用重构仍可能改变行为。
+- 一次只能运行一个菜单栏管理器。
+- 某些系统或第三方项目可能没有可读的图标名称；Open Notch 会显示可确认的 Bundle Identifier，并避免把匿名 Control Center 窗口误报为项目。
+- 应用目前面向 Apple silicon 构建；Intel Mac 需要调整 `build.sh` 的编译目标后自行构建。
 
-Open Notch is licensed under the GNU General Public License v3.0; see
-[`LICENSE`](LICENSE). The hosted status-item event-routing compatibility layer
-is derived from the event-routing mechanism in [Ice](https://github.com/jordanbaird/Ice),
-which is also GPL-3.0. See [`NOTICE.md`](NOTICE.md) for attribution details.
+## 常见问题
 
-Contributions are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md)
-before opening an issue or pull request.
+### 为什么必须开启辅助功能？
+
+这是 macOS 对跨进程状态栏项目观察和拖动操作的系统授权。没有授权时，Open Notch 只能展示设置界面，不能可靠地管理其他应用的图标。
+
+### Open Notch 会一直控制鼠标吗？
+
+不会。只读发现和监测不合成鼠标事件；只有布局偏差被确认、且用户没有正在交互时，才会执行一次有界的 Command-拖动。
+
+### 为什么 OneDrive 需要单独处理？
+
+新版 macOS 可能让 OneDrive 菜单栏项由 Control Center 动态托管，窗口编号和标题会变化。Open Notch 用语义身份和持久绑定恢复它，而不是把临时窗口当成新项目。
+
+### 可以和 Ice 或 Bartender 一起运行吗？
+
+不建议。它们都会尝试改变同一组状态栏项目的位置，无法保证哪个工具的策略最终生效。
+
+## 许可证、归属与再发布义务
+
+Open Notch 项目整体使用 **GNU General Public License v3.0-only (GPL-3.0-only)**，完整文本见 [`LICENSE`](LICENSE)。如果你再发布或修改 Open Notch：
+
+1. 保留 GPL、版权、无担保和第三方归属声明。
+2. 对修改后的版本明确标注修改内容和日期。
+3. 按 GPL-3.0 提供对应源代码、构建脚本和许可证文本。
+4. `Sources/TargetedEventRouter.swift` 的 Ice 衍生部分继续适用 Ice 的版权和 GPL 归属要求。
+
+Ice 来源信息：
+
+- 项目：https://github.com/jordanbaird/Ice
+- 上游文件：`Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift`
+- 版权：Copyright (C) 2024-2025 Jordan Baird
+
+Bartender 是专有软件；它只是产品方向上的灵感来源，Open Notch 不包含 Bartender 源代码。Open Notch 按现状提供，不提供任何明示或暗示担保。
+
+## 参与贡献
+
+欢迎提交 issue、改进建议和 pull request。请先阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md)、[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) 和 [`NOTICE.md`](NOTICE.md)。
+
+项目地址：https://github.com/woniuniuniu/open-notch
