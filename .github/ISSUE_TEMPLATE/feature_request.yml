@@ -1,0 +1,24 @@
+name: Feature request
+description: Suggest a focused improvement to Open Notch
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the workflow or limitation this request would improve.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: Relevant macOS version
+      placeholder: 26.5 (25F71)

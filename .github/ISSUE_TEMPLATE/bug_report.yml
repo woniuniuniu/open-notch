@@ -1,0 +1,46 @@
+name: Bug report
+description: Report reproducible behavior in Open Notch
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Remove personal data from screenshots and logs before attaching them.
+  - type: input
+    id: version
+    attributes:
+      label: Open Notch version
+      placeholder: 0.5.0 (8)
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: 26.5 (25F71)
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and reproduction steps
+    validations:
+      required: true
+  - type: dropdown
+    id: other-manager
+    attributes:
+      label: Was another menu bar manager running?
+      options:
+        - "No"
+        - Ice
+        - Bartender
+        - Other
+    validations:
+      required: true
