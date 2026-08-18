@@ -15,24 +15,16 @@ Open Notch 是一个完全开源的 **Mac 菜单栏管理工具**。它可以隐
 
 ## 界面预览
 
-截图来自真实运行中的 Open Notch，覆盖中英文、浅色与深色模式：
+截图来自新版 Open Notch 的真实运行界面：
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/open-notch-overview-light-zh.png" alt="Open Notch 中文浅色总览" /></td>
-    <td width="50%"><img src="docs/images/open-notch-menu-items-light-en.png" alt="Open Notch English light Menu Bar Items" /></td>
+    <td width="50%"><img src="docs/images/open-notch-overview-zh.png" alt="Open Notch 中文总览" /></td>
+    <td width="50%"><img src="docs/images/open-notch-menu-items-zh.png" alt="Open Notch 中文菜单栏图标管理" /></td>
   </tr>
   <tr>
-    <td align="center">中文 · 浅色 · 总览</td>
-    <td align="center">English · Light · Menu Bar Items</td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/images/open-notch-onedrive-dark-zh.png" alt="Open Notch 中文深色 OneDrive 守护" /></td>
-    <td width="50%"><img src="docs/images/open-notch-general-dark-en.png" alt="Open Notch English dark General" /></td>
-  </tr>
-  <tr>
-    <td align="center">中文 · 深色 · OneDrive 守护</td>
-    <td align="center">English · Dark · General</td>
+    <td align="center">总览</td>
+    <td align="center">菜单栏图标管理</td>
   </tr>
 </table>
 

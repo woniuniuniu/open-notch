@@ -15,24 +15,16 @@ It is a tribute to Bartender and Ice, with its core features built from scratch 
 
 ## Screenshots
 
-These images were captured from the running app and cover both languages and appearance modes:
+These images show the current Open Notch interface running in Simplified Chinese:
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/open-notch-overview-light-zh.png" alt="Open Notch Simplified Chinese light Overview" /></td>
-    <td width="50%"><img src="docs/images/open-notch-menu-items-light-en.png" alt="Open Notch English light Menu Bar Items" /></td>
+    <td width="50%"><img src="docs/images/open-notch-overview-zh.png" alt="Open Notch overview in Simplified Chinese" /></td>
+    <td width="50%"><img src="docs/images/open-notch-menu-items-zh.png" alt="Open Notch menu bar item management in Simplified Chinese" /></td>
   </tr>
   <tr>
-    <td align="center">中文 · Light · Overview</td>
-    <td align="center">English · Light · Menu Bar Items</td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/images/open-notch-onedrive-dark-zh.png" alt="Open Notch Simplified Chinese dark OneDrive guardian" /></td>
-    <td width="50%"><img src="docs/images/open-notch-general-dark-en.png" alt="Open Notch English dark General" /></td>
-  </tr>
-  <tr>
-    <td align="center">中文 · Dark · OneDrive guardian</td>
-    <td align="center">English · Dark · General</td>
+    <td align="center">Overview</td>
+    <td align="center">Menu Bar Items</td>
   </tr>
 </table>
 
