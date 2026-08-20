@@ -110,7 +110,30 @@ enum MenuBarDiscovery {
     }
 
     static func statusWindows() -> [RawStatusWindow] {
-        guard let list = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] else {
+        let list: [[String: Any]]
+        if WindowServerBridge.usesIndividualWindowEnumeration {
+            let bridged = WindowServerBridge.descriptions(
+                for: WindowServerBridge.individualMenuBarWindowIDs()
+            )
+            // Fail closed to the public inventory if a beta removes the private symbol.
+            list = bridged.isEmpty ? publicWindowDescriptions() : bridged
+        } else {
+            list = publicWindowDescriptions()
+        }
+
+        return rawStatusWindows(from: list)
+    }
+
+    static func publicStatusWindows() -> [RawStatusWindow] {
+        rawStatusWindows(from: publicWindowDescriptions())
+    }
+
+    private static func publicWindowDescriptions() -> [[String: Any]] {
+        CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? []
+    }
+
+    private static func rawStatusWindows(from list: [[String: Any]]) -> [RawStatusWindow] {
+        guard !list.isEmpty else {
             return []
         }
 

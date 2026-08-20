@@ -12,6 +12,7 @@
 "Battery" = "Battery";
 "Bundle Identifier" = "Bundle Identifier";
 "Clock" = "Clock";
+"Clear Search" = "Clear Search";
 "Collapse" = "Collapse";
 "Collapse Hidden Items" = "Collapse Hidden Items";
 "Collapsed" = "Collapsed";
@@ -27,6 +28,7 @@
 "Expand hidden section" = "Expand hidden section";
 "Expanded" = "Expanded";
 "Find OneDrive" = "Find OneDrive";
+"Filter scanned items" = "Filter scanned items";
 "First upgrade: identifying menu bar items" = "First upgrade: identifying menu bar items";
 "Focus" = "Focus";
 "General" = "General";
@@ -55,6 +57,7 @@
 "Menu Bar Items" = "Menu Bar Items";
 "Minimum System" = "Minimum System";
 "No manageable items" = "No manageable items";
+"No matching items" = "No matching items";
 "Not Authorized" = "Not Authorized";
 "Not Found" = "Not Found";
 "Off" = "Off";
@@ -95,6 +98,7 @@
 "Startup scan" = "Startup scan";
 "Status" = "Status";
 "Status Menu Title" = "Open Notch";
+"System" = "System";
 "System state changed" = "System state changed";
 "This program comes with absolutely no warranty. You may redistribute it under GNU GPL v3." = "This program comes with absolutely no warranty. You may redistribute it under GNU GPL v3.";
 "Unknown" = "Unknown";
@@ -104,9 +108,18 @@
 "View License" = "View License";
 "View Notices" = "View Notices";
 "Visible" = "Visible";
+"Show in Dock" = "Show in Dock";
+"Dock and menu bar" = "Dock and menu bar";
+"Menu bar only" = "Menu bar only";
 "App Name" = "Open Notch";
 "Credits" = "Credits";
 "Developer" = "Developer";
 "Chinese localization contributor" = "Chinese localization contributor";
-"Xiaohongshu @Snail's Tech Notes" = "Xiaohongshu @Snail's Tech Notes";
+"Xiaohongshu @Snail's Tech Notes" = "小红书@蜗牛的科技笔记";
 "%d manageable items" = "%d manageable items";
+"Diagnostics" = "Diagnostics";
+"Debug report" = "Debug report";
+"Export Debug Log" = "Export Debug Log";
+"Save compatibility details and recent activity to Desktop" = "Save compatibility details and recent activity to Desktop";
+"Debug log exported to Desktop" = "Debug log exported to Desktop";
+"Debug log export failed" = "Debug log export failed";

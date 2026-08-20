@@ -15,6 +15,7 @@ final class SettingsStore: ObservableObject {
         static let repairCount = "oneDriveRepairCount"
         static let language = Localization.languageDefaultsKey
         static let appearance = "appearanceMode"
+        static let showInDock = "showInDock"
     }
 
     @Published var policies: [String: ItemDisposition] {
@@ -53,6 +54,10 @@ final class SettingsStore: ObservableObject {
         didSet { defaults.set(appearanceMode.rawValue, forKey: Key.appearance) }
     }
 
+    @Published var showInDock: Bool {
+        didSet { defaults.set(showInDock, forKey: Key.showInDock) }
+    }
+
     private let defaults = UserDefaults.standard
 
     private init() {
@@ -88,7 +93,8 @@ final class SettingsStore: ObservableObject {
         isExpanded = defaults.object(forKey: Key.expanded) as? Bool ?? true
         repairCount = defaults.integer(forKey: Key.repairCount)
         language = AppLanguage(rawValue: defaults.string(forKey: Key.language) ?? "") ?? .english
-        appearanceMode = AppearanceMode(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .light
+        appearanceMode = AppearanceMode(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
+        showInDock = defaults.object(forKey: Key.showInDock) as? Bool ?? false
 
         // Persist the sanitized values so invalid identities from pre-0.1.3
         // builds cannot return on the next launch.
@@ -109,7 +115,7 @@ final class SettingsStore: ObservableObject {
     }
 
     func applyAppearance() {
-        NSApp.appearance = NSAppearance(named: appearanceMode.appearanceName)
+        NSApp.appearance = appearanceMode.appearance
     }
 
     func remember(_ items: [MenuBarItem]) {

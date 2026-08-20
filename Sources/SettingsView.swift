@@ -26,6 +26,7 @@ struct SettingsRootView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject private var settings = SettingsStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showSettingsMenu = false
 
     var body: some View {
         ZStack {
@@ -33,10 +34,19 @@ struct SettingsRootView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
 
             VStack(spacing: 0) {
-                CompactTopBar()
+                CompactTopBar(showMenu: $showSettingsMenu)
                 detail
             }
             .padding(12)
+
+            if showSettingsMenu {
+                SettingsQuickMenu(isPresented: $showSettingsMenu)
+                    .padding(.top, 54)
+                    .padding(.trailing, 17)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topTrailing)))
+                    .zIndex(100)
+            }
         }
         .frame(width: 470, height: 650)
         .id(settings.language)
@@ -90,11 +100,12 @@ private struct CompactTopBar: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var namespace
-    @State private var showMenu = false
-    @State private var hoveredMenu: String?
+    @Binding var showMenu: Bool
 
     var body: some View {
         HStack(spacing: 10) {
+            WindowControlButtons()
+
             Image(nsImage: NSApplication.shared.applicationIconImage)
                 .resizable().frame(width: 26, height: 26)
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -108,34 +119,13 @@ private struct CompactTopBar: View {
 
             Spacer(minLength: 0)
 
-            Button { showMenu.toggle() } label: {
+            Button { withAnimation(.easeOut(duration: 0.16)) { showMenu.toggle() } } label: {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 13, weight: .semibold))
                     .frame(width: 29, height: 29)
             }
             .buttonStyle(.plain)
             .background(.white.opacity(0.10), in: Circle())
-            .popover(isPresented: $showMenu, arrowEdge: .top) {
-                VStack(alignment: .leading, spacing: 3) {
-                    menuButton(L("OneDrive"), icon: "cloud.fill", pane: .oneDrive)
-                    menuButton(L("General"), icon: "slider.horizontal.3", pane: .general)
-                    menuButton(L("About"), icon: "info.circle", pane: .about)
-                    Divider().padding(.vertical, 3)
-                    Button { NSApplication.shared.terminate(nil) } label: {
-                        Text(L("Quit Open Notch"))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 10).padding(.vertical, 8)
-                    .contentShape(Rectangle())
-                    .onHover { isHovering in
-                        hoveredMenu = isHovering ? "quit" : nil
-                    }
-                    .background(hoveredMenu == "quit" ? Color.primary.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 7))
-                }
-                .padding(8)
-                .frame(width: 180)
-            }
         }
         .padding(.horizontal, 5)
         .frame(height: 42)
@@ -149,8 +139,8 @@ private struct CompactTopBar: View {
             }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: icon).font(.system(size: 10, weight: .bold))
-                Text(title).font(.system(size: 11, weight: .semibold))
+                Image(systemName: icon).font(.system(size: 11, weight: .bold))
+                Text(title).font(.system(size: 13, weight: .semibold))
             }
             .padding(.horizontal, 10).frame(height: 27)
             .background {
@@ -162,19 +152,90 @@ private struct CompactTopBar: View {
         .buttonStyle(.plain)
     }
 
+}
+
+private struct SettingsQuickMenu: View {
+    @EnvironmentObject private var model: AppModel
+    @Binding var isPresented: Bool
+    @State private var hoveredMenu: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            menuButton(L("OneDrive"), icon: "cloud.fill", pane: .oneDrive)
+            menuButton(L("General"), icon: "slider.horizontal.3", pane: .general)
+            menuButton(L("About"), icon: "info.circle", pane: .about)
+            Divider().padding(.vertical, 3)
+            Button { NSApplication.shared.terminate(nil) } label: {
+                Text(L("Quit Open Notch"))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 10)
+            .frame(width: 164, height: 34, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(Color.clear)
+        }
+        .padding(8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.white.opacity(0.16), lineWidth: 1) }
+        .shadow(color: .black.opacity(0.24), radius: 20, y: 8)
+        .frame(width: 190)
+    }
+
     private func menuButton(_ title: String, icon: String, pane: SettingsPane) -> some View {
-        Button { model.selectedPane = pane; showMenu = false } label: {
+        Button { model.selectedPane = pane; isPresented = false } label: {
             Label(title, systemImage: icon)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 10)
-        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+        .frame(width: 164, height: 34, alignment: .leading)
         .contentShape(Rectangle())
-        .onHover { isHovering in
-            hoveredMenu = isHovering ? pane.id : nil
-        }
+        .onHover { hoveredMenu = $0 ? pane.id : nil }
         .background(hoveredMenu == pane.id ? Color.primary.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 7))
+    }
+}
+
+private struct WindowControlButtons: View {
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 7) {
+            control(color: Color(red: 1, green: 0.37, blue: 0.34), symbol: "xmark") {
+                closeSettingsWindow()
+            }
+            control(color: Color(red: 1, green: 0.74, blue: 0.18), symbol: "minus") {
+                NSApp.keyWindow?.miniaturize(nil)
+            }
+            control(color: Color(red: 0.20, green: 0.78, blue: 0.35), symbol: "arrow.up.left.and.arrow.down.right") {
+                NSApp.keyWindow?.zoom(nil)
+            }
+        }
+        .padding(.horizontal, 3)
+        .onHover { hovering = $0 }
+    }
+
+    private func control(color: Color, symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            ZStack {
+                Circle().fill(color).frame(width: 13, height: 13)
+                if hovering {
+                    Image(systemName: symbol)
+                        .font(.system(size: 7, weight: .black))
+                        .foregroundStyle(.black.opacity(0.62))
+                }
+            }
+            .frame(width: 17, height: 22)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func closeSettingsWindow() {
+        let window = NSApp.windows.first {
+            $0.identifier?.rawValue == "OpenNotch.Settings"
+        }
+        window?.performClose(self)
     }
 }
 
@@ -313,10 +374,10 @@ private struct PageScaffold<Content: View>: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.system(size: 22, weight: .bold))
                     if let subtitle {
                         Text(subtitle)
-                            .font(.caption)
+                            .font(.system(size: 13))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -373,7 +434,7 @@ private struct GlassPanel<Content: View>: View {
                             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
                     Text(title)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 13)
@@ -464,10 +525,10 @@ private struct MetricLine: View {
                 .fill(color)
                 .frame(width: 7, height: 7)
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
             Spacer()
             Text(value)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
                 .contentTransition(.numericText())
         }
@@ -505,10 +566,10 @@ private struct SettingsLine<Control: View>: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                 if let subtitle {
                     Text(subtitle)
-                        .font(.caption2)
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -629,7 +690,7 @@ private struct MenuItemsPane: View {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
                             .foregroundStyle(.secondary)
-                        TextField(L("Search items"), text: $model.searchText)
+                        TextField(L("Filter scanned items"), text: $model.searchText)
                             .textFieldStyle(.plain)
                     }
                     .padding(.horizontal, 11)
@@ -656,10 +717,26 @@ private struct MenuItemsPane: View {
                     .help(L("Rescan"))
                 }
 
-                if model.filteredItems.isEmpty {
+                if model.items.filter({ !$0.isProtected }).isEmpty {
                     GlassPanel {
-                        ContentUnavailableView(L("No manageable items"), systemImage: "menubar.rectangle")
-                            .frame(maxWidth: .infinity, minHeight: 180)
+                        VStack(spacing: 10) {
+                            ContentUnavailableView(L("No manageable items"), systemImage: "menubar.rectangle")
+                            Button(L("Scan Now")) {
+                                model.searchText = ""
+                                model.refresh(reason: L("Manual scan"), reconcile: false)
+                            }
+                            .systemGlassButton(prominent: true)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 180)
+                    }
+                } else if model.filteredItems.isEmpty {
+                    GlassPanel {
+                        VStack(spacing: 10) {
+                            ContentUnavailableView(L("No matching items"), systemImage: "magnifyingglass")
+                            Button(L("Clear Search")) { model.searchText = "" }
+                                .systemGlassButton()
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 180)
                     }
                 } else {
                     GlassPanel {
@@ -693,7 +770,7 @@ private struct MenuItemRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(item.displayName)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .lineLimit(1)
                     if item.isOneDrive {
                         Text(L("Always Pinned"))
@@ -702,7 +779,7 @@ private struct MenuItemRow: View {
                     }
                 }
                 Text(item.detail.isEmpty ? item.semanticBundleIdentifier : item.detail)
-                    .font(.caption2)
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -912,7 +989,7 @@ private struct GeneralPane: View {
                             }
                         }
                         .labelsHidden()
-                        .frame(width: 150)
+                        .frame(width: 210)
                     }
                     Divider().opacity(0.55)
                     SettingsLine(L("Appearance"), systemImage: "circle.lefthalf.filled", tint: OpenNotchTheme.magenta) {
@@ -933,6 +1010,18 @@ private struct GeneralPane: View {
 
             GlassPanel(title: L("Operation"), systemImage: "bolt.fill", accent: OpenNotchTheme.yellow) {
                 VStack(spacing: 0) {
+                    SettingsLine(
+                        L("Show in Dock"),
+                        subtitle: settings.showInDock ? L("Dock and menu bar") : L("Menu bar only"),
+                        systemImage: "dock.rectangle"
+                    ) {
+                        Toggle("", isOn: Binding(
+                            get: { settings.showInDock },
+                            set: { model.setDockVisibility($0) }
+                        ))
+                        .labelsHidden()
+                    }
+                    Divider().opacity(0.55)
                     SettingsLine(L("Open at Login"), systemImage: "power") {
                         Toggle("", isOn: Binding(
                             get: { model.launchAtLogin },
@@ -1029,6 +1118,18 @@ private struct AboutPane: View {
                         Button(L("View Notices")) { openBundledDocument(resource: "NOTICE", extension: "md") }
                             .systemGlassButton()
                     }
+                }
+            }
+
+            GlassPanel(title: L("Diagnostics"), systemImage: "ladybug.fill", accent: OpenNotchTheme.yellow) {
+                SettingsLine(
+                    L("Debug report"),
+                    subtitle: L("Save compatibility details and recent activity to Desktop"),
+                    systemImage: "doc.badge.gearshape",
+                    tint: OpenNotchTheme.yellow
+                ) {
+                    Button(L("Export Debug Log")) { AppModel.shared.exportDebugReport() }
+                        .systemGlassButton(prominent: true)
                 }
             }
 

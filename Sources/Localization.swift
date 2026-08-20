@@ -23,6 +23,7 @@ enum AppLanguage: String, CaseIterable, Codable, Identifiable {
 }
 
 enum AppearanceMode: String, CaseIterable, Codable, Identifiable {
+    case system
     case light
     case dark
 
@@ -30,15 +31,17 @@ enum AppearanceMode: String, CaseIterable, Codable, Identifiable {
 
     var title: String {
         switch self {
+        case .system: L("System")
         case .light: L("Light")
         case .dark: L("Dark")
         }
     }
 
-    var appearanceName: NSAppearance.Name {
+    var appearance: NSAppearance? {
         switch self {
-        case .light: .aqua
-        case .dark: .darkAqua
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
         }
     }
 }
