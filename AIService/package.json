@@ -1,0 +1,11 @@
+{
+  "name": "open-notch-ai-service",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "dependencies": {
+    "@vercel/functions": "^3.1.3"
+  }
+}

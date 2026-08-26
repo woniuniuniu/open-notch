@@ -12,6 +12,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var guardianEvents = [GuardianEvent]()
     @Published private(set) var lastScanDate: Date?
     @Published private(set) var launchAtLogin = false
+    @Published private(set) var aiRecommendation: AIRecommendation?
+    @Published private(set) var isRequestingAIRecommendation = false
+    @Published private(set) var aiRecommendationMessage: String?
+    @Published private(set) var aiRequestPhase: AIRequestPhase?
+    @Published var selectedAIPlanID: String?
     @Published var selectedPane: SettingsPane? = .overview
     @Published var searchText = ""
 
@@ -32,11 +37,47 @@ final class AppModel: ObservableObject {
     private var failedMoveUntil = [String: Date]()
     private var layoutReconciler = LayoutReconciler()
     private var openSettingsAction: (() -> Void)?
+    private var aiRecommendationItems = [MenuBarItem]()
+    private var aiRecommendationBeforeDispositions = [String: ItemDisposition]()
+    private var aiUndoPolicies: [String: ItemDisposition]?
+    private var aiApplyQueue = [(MenuBarItem, ItemDisposition)]()
+    private var aiApplyChangedCount = 0
+    private var aiApplyCompletionMessage = ""
 
     private init() {}
 
     var isExpanded: Bool { settings.isExpanded }
     var oneDriveItem: MenuBarItem? { items.first(where: \.isOneDrive) }
+
+    private var aiRecommendationCountToday: Int {
+        settings.aiRecommendationDates.filter { Calendar.current.isDateInToday($0) }.count
+    }
+
+    var aiRemainingRecommendationCount: Int {
+        max(0, 3 - aiRecommendationCountToday)
+    }
+
+    var aiNextAvailableDate: Date? {
+        guard aiRemainingRecommendationCount == 0 else { return nil }
+        return Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: .now))
+    }
+
+    var canRequestAIRecommendation: Bool {
+        !isRequestingAIRecommendation && !isScanning && aiRemainingRecommendationCount > 0
+    }
+
+    var aiAvailabilityMessage: String {
+        guard aiRemainingRecommendationCount == 0, let next = aiNextAvailableDate else {
+            return LF("%d generations remaining today", aiRemainingRecommendationCount)
+        }
+        let seconds = max(0, Int(ceil(next.timeIntervalSinceNow)))
+        let hours = seconds / 3_600
+        let minutes = (seconds % 3_600 + 59) / 60
+        if hours > 0 {
+            return LF("Available again in %d hours %d minutes", hours, minutes)
+        }
+        return LF("Available again in %d minutes", max(1, minutes))
+    }
 
     var visibleItems: [MenuBarItem] {
         items.filter { disposition(for: $0) == .visible }
@@ -184,6 +225,13 @@ final class AppModel: ObservableObject {
     }
 
     func refresh(reason: String = L("Scan"), reconcile: Bool = false) {
+        guard !isRequestingAIRecommendation else {
+            if pendingRefresh == nil || reconcile {
+                pendingRefresh = (reason, reconcile)
+            }
+            Diagnostics.shared.append("Scan deferred while AI recommendation is running; reason=\(reason)")
+            return
+        }
         guard !isScanning else {
             // Coalesce bursts from timers, workspace notifications, and user actions.
             if pendingRefresh == nil || reconcile {
@@ -206,13 +254,16 @@ final class AppModel: ObservableObject {
             let scanned = MenuBarDiscovery.scan(excluding: excluded, previousItems: previousItems)
             DispatchQueue.main.async {
                 guard let self else { return }
+                let scanChanged = !self.isEquivalentScan(scanned)
                 self.itemsByWindowID = Dictionary(
                     scanned.map { ($0.windowID, $0) },
                     uniquingKeysWith: { current, _ in current }
                 )
-                self.items = scanned.sorted { lhs, rhs in
-                    if lhs.isOneDrive != rhs.isOneDrive { return lhs.isOneDrive }
-                    return lhs.frame.minX < rhs.frame.minX
+                if scanChanged {
+                    self.items = scanned.sorted { lhs, rhs in
+                        if lhs.isOneDrive != rhs.isOneDrive { return lhs.isOneDrive }
+                        return lhs.frame.minX < rhs.frame.minX
+                    }
                 }
                 self.updateActualDispositions()
                 self.settings.remember(scanned)
@@ -228,6 +279,19 @@ final class AppModel: ObservableObject {
                 if reconcile { self.reconcile(reason: reason) }
                 self.runPendingRefreshIfNeeded()
             }
+        }
+    }
+
+    private func isEquivalentScan(_ scanned: [MenuBarItem]) -> Bool {
+        guard scanned.count == items.count else { return false }
+        let currentByID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        return scanned.allSatisfy { item in
+            guard let current = currentByID[item.id] else { return false }
+            return current.displayName == item.displayName
+                && current.symbolName == item.symbolName
+                && current.semanticBundleIdentifier == item.semanticBundleIdentifier
+                && abs(current.frame.minX - item.frame.minX) < 0.5
+                && abs(current.frame.maxX - item.frame.maxX) < 0.5
         }
     }
 
@@ -251,6 +315,173 @@ final class AppModel: ObservableObject {
             force: true,
             collapseAfterSuccess: disposition == .hidden
         )
+    }
+
+    func requestAIRecommendation() {
+        guard canRequestAIRecommendation else {
+            aiRecommendationMessage = aiAvailabilityMessage
+            return
+        }
+        let manageable = items.filter { !$0.isProtected }
+        guard !manageable.isEmpty else {
+            aiRecommendationMessage = L("No menu bar items are available for AI analysis")
+            return
+        }
+
+        updateActualDispositions()
+        isRequestingAIRecommendation = true
+        aiRequestPhase = .preparing
+        aiRecommendationMessage = nil
+        let snapshotItems = manageable
+        let snapshotDispositions = Dictionary(uniqueKeysWithValues: snapshotItems.map { ($0.id, disposition(for: $0)) })
+        aiRecommendationItems = snapshotItems
+        aiRecommendationBeforeDispositions = snapshotDispositions
+        aiRecommendation = nil
+        selectedAIPlanID = nil
+        let language = settings.language
+        let installationID = settings.aiInstallationID
+        aiRequestPhase = .analyzing
+
+        Task { [weak self] in
+            do {
+                let recommendation = try await AIRecommendationService.shared.request(
+                    items: snapshotItems,
+                    dispositions: snapshotDispositions,
+                    language: language,
+                    installationID: installationID
+                )
+                guard let self else { return }
+                self.aiRequestPhase = .finalizing
+                ApplicationIconResolver.shared.preload(snapshotItems)
+                self.aiRecommendation = recommendation
+                self.selectedAIPlanID = recommendation.recommendedPlan?.id
+                let descriptions: [String: String] = Dictionary(uniqueKeysWithValues: recommendation.descriptions.compactMap { description -> (String, String)? in
+                    guard
+                        let index = Int(description.id.replacingOccurrences(of: "item-", with: "")),
+                        snapshotItems.indices.contains(index)
+                    else { return nil }
+                    return (snapshotItems[index].id, description.description)
+                })
+                self.settings.setAIDescriptions(descriptions, language: language)
+                self.settings.recordAIRecommendation()
+                self.aiRecommendationMessage = L("Two AI layouts are ready. Review them before applying.")
+                self.isRequestingAIRecommendation = false
+                self.aiRequestPhase = nil
+                self.runPendingRefreshIfNeeded()
+            } catch {
+                guard let self else { return }
+                self.aiRecommendationMessage = error.localizedDescription
+                self.isRequestingAIRecommendation = false
+                self.aiRequestPhase = nil
+                self.runPendingRefreshIfNeeded()
+            }
+        }
+    }
+
+    func aiBeforeDisposition(for item: MenuBarItem) -> ItemDisposition {
+        aiRecommendationBeforeDispositions[item.id] ?? settings.disposition(for: item)
+    }
+
+    var canApplyAIRecommendation: Bool {
+        guard let recommendation = aiRecommendation, !isRequestingAIRecommendation, !isApplyingAIRecommendation, !aiRecommendationItems.isEmpty else { return false }
+        let snapshotIDs = Set(aiRecommendationItems.map(\.id))
+        return recommendation.plans.contains { plan in
+            Set(plan.items.map { item in
+                guard let index = Int(item.id.replacingOccurrences(of: "item-", with: "")) else { return "" }
+                return aiRecommendationItems.indices.contains(index) ? aiRecommendationItems[index].id : ""
+            }).isSubset(of: snapshotIDs)
+        }
+    }
+
+    var isApplyingAIRecommendation: Bool {
+        !aiApplyQueue.isEmpty || aiApplyChangedCount > 0
+    }
+
+    func applyAIRecommendation(_ plan: AIRecommendationPlan) {
+        guard canApplyAIRecommendation else {
+            aiRecommendationMessage = L("The scan changed. Generate a new plan before applying it.")
+            return
+        }
+        var previous = [String: ItemDisposition]()
+        var queue = [(MenuBarItem, ItemDisposition)]()
+        for decision in plan.items {
+            guard
+                let index = Int(decision.id.replacingOccurrences(of: "item-", with: "")),
+                aiRecommendationItems.indices.contains(index)
+            else { continue }
+            let item = aiRecommendationItems[index]
+            guard !item.isProtected, !(item.isOneDrive && settings.oneDriveGuardianEnabled) else { continue }
+            previous[item.id] = aiBeforeDisposition(for: item)
+            if aiBeforeDisposition(for: item) != decision.disposition {
+                queue.append((item, decision.disposition))
+            }
+            settings.setDisposition(decision.disposition, for: item.id)
+            layoutReconciler.reset(item.id)
+        }
+        aiUndoPolicies = previous
+        aiApplyQueue = queue
+        aiApplyChangedCount = queue.count
+        aiApplyCompletionMessage = LF("AI layout applied to %d items", queue.count)
+        aiRecommendationMessage = LF("Applying AI layout to %d items…", queue.count)
+        objectWillChange.send()
+        processNextAIApply()
+    }
+
+    func item(forAIRecommendationID recommendationID: String) -> MenuBarItem? {
+        guard
+            let index = Int(recommendationID.replacingOccurrences(of: "item-", with: "")),
+            aiRecommendationItems.indices.contains(index)
+        else { return nil }
+        return aiRecommendationItems[index]
+    }
+
+    func undoAIRecommendation() {
+        guard let aiUndoPolicies else { return }
+        var queue = [(MenuBarItem, ItemDisposition)]()
+        for (id, disposition) in aiUndoPolicies {
+            settings.setDisposition(disposition, for: id)
+            layoutReconciler.reset(id)
+            if let item = aiRecommendationItems.first(where: { $0.id == id }),
+               aiBeforeDisposition(for: item) != disposition
+            {
+                queue.append((item, disposition))
+            }
+        }
+        self.aiUndoPolicies = nil
+        aiApplyQueue = queue
+        aiApplyChangedCount = queue.count
+        aiApplyCompletionMessage = L("Previous menu bar layout restored")
+        aiRecommendationMessage = L("Restoring the previous menu bar layout…")
+        objectWillChange.send()
+        processNextAIApply()
+    }
+
+    var canUndoAIRecommendation: Bool { aiUndoPolicies != nil }
+
+    private func processNextAIApply() {
+        guard !isMoving else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.processNextAIApply()
+            }
+            return
+        }
+        guard !aiApplyQueue.isEmpty else {
+            aiRecommendationMessage = aiApplyCompletionMessage
+            aiApplyChangedCount = 0
+            aiApplyCompletionMessage = ""
+            refresh(reason: L("AI layout application"), reconcile: false)
+            return
+        }
+        let next = aiApplyQueue.removeFirst()
+        move(next.0, to: next.1, reason: L("AI layout application"), force: true)
+    }
+
+    private func scheduleAIReconciliationPasses() {
+        for delay in stride(from: 0.0, through: 30.0, by: 2.5) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.refresh(reason: L("AI layout application"), reconcile: true)
+            }
+        }
     }
 
     func disposition(for item: MenuBarItem) -> ItemDisposition {
@@ -415,6 +646,10 @@ final class AppModel: ObservableObject {
               let boundary = MenuBarDiscovery.statusWindow(id: boundaryWindowID)
         else {
             Diagnostics.shared.append("Move failed before start; item=\(item.displayName); boundary unavailable")
+            if !aiApplyQueue.isEmpty {
+                aiApplyQueue.removeAll()
+                aiRecommendationMessage = L("The menu bar could not be reached. Check Accessibility permission and try again.")
+            }
             return
         }
 
@@ -424,6 +659,9 @@ final class AppModel: ObservableObject {
                 addEvent(L("OneDrive is already pinned"))
             }
             Diagnostics.shared.append("Move unnecessary; item=\(item.displayName); already=\(disposition.rawValue)")
+            if !aiApplyQueue.isEmpty {
+                processNextAIApply()
+            }
             return
         }
 
@@ -470,7 +708,13 @@ final class AppModel: ObservableObject {
                     self.addEvent(LF("Could not move %@. Check Accessibility permission.", item.displayName))
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-                    self?.refresh(reason: L("Post-move verification"), reconcile: false)
+                    guard let self else { return }
+                    self.refresh(reason: L("Post-move verification"), reconcile: false)
+                    if !self.aiApplyQueue.isEmpty {
+                        self.processNextAIApply()
+                    } else if self.aiApplyChangedCount > 0 {
+                        self.processNextAIApply()
+                    }
                 }
             }
         }
