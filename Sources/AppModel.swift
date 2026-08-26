@@ -43,6 +43,7 @@ final class AppModel: ObservableObject {
     private var aiApplyQueue = [(MenuBarItem, ItemDisposition)]()
     private var aiApplyChangedCount = 0
     private var aiApplyCompletionMessage = ""
+    private var lastEnumerationDiagnostic = ""
 
     private init() {}
 
@@ -251,7 +252,8 @@ final class AppModel: ObservableObject {
         let previousItems = Array(itemsByWindowID.values)
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let scanned = MenuBarDiscovery.scan(excluding: excluded, previousItems: previousItems)
+            let report = MenuBarDiscovery.scanReport(excluding: excluded, previousItems: previousItems)
+            let scanned = report.items
             DispatchQueue.main.async {
                 guard let self else { return }
                 let scanChanged = !self.isEquivalentScan(scanned)
@@ -270,6 +272,10 @@ final class AppModel: ObservableObject {
                 self.lastScanDate = .now
                 self.isScanning = false
                 Diagnostics.shared.append("Scan finished; items=\(scanned.count); visible=\(self.visibleItems.count); hidden=\(self.hiddenItems.count); accessibility=\(self.hasAccessibilityPermission)")
+                if report.diagnosticSummary != self.lastEnumerationDiagnostic {
+                    self.lastEnumerationDiagnostic = report.diagnosticSummary
+                    Diagnostics.shared.append("Enumeration inventory; \(report.diagnosticSummary)")
+                }
                 self.objectWillChange.send()
 
                 if self.identityRebindInProgress {
