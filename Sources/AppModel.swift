@@ -91,10 +91,24 @@ final class AppModel: ObservableObject {
     }
 
     var filteredItems: [MenuBarItem] {
-        guard !searchText.isEmpty else { return items.filter { !$0.isProtected } }
-        return items.filter {
-            !$0.isProtected && ($0.displayName.localizedCaseInsensitiveContains(searchText) || $0.detail.localizedCaseInsensitiveContains(searchText))
+        items.filter { item in
+            guard !item.isProtected else { return false }
+            return searchText.isEmpty
+                || item.displayName.localizedCaseInsensitiveContains(searchText)
+                || item.detail.localizedCaseInsensitiveContains(searchText)
         }
+    }
+
+    var filteredVisibleItems: [MenuBarItem] {
+        filteredItems.filter { disposition(for: $0) == .visible && $0.hostPID != 0 }
+    }
+
+    var filteredHiddenItems: [MenuBarItem] {
+        filteredItems.filter { disposition(for: $0) == .hidden }
+    }
+
+    var filteredInactiveItems: [MenuBarItem] {
+        filteredItems.filter { disposition(for: $0) == .visible && $0.hostPID == 0 }
     }
 
     func start(openSettings: @escaping () -> Void) {
@@ -209,6 +223,10 @@ final class AppModel: ObservableObject {
         let target = items[targetIndex]
         guard !source.isProtected, !target.isProtected else { return }
         let placeAfterTarget = sourceIndex < targetIndex
+        // MenuBarAgent is relaunched to consume its updated preferred order.
+        // Release the old visibility connection first, then reapply the user's
+        // hidden set after the replacement agent is ready.
+        menuBarAgentVisibility.invalidate()
         guard MenuBarAgentBridge.moveItem(
             source.semanticIdentifier,
             adjacentTo: target.semanticIdentifier,
@@ -216,6 +234,7 @@ final class AppModel: ObservableObject {
         ) else {
             Diagnostics.shared.append("MenuBarAgent reorder failed; source=\(source.id); target=\(target.id)")
             addEvent(L("Could not reorder menu bar item"))
+            applyMenuBarAgentVisibility(reason: L("Manual reorder"))
             return
         }
 
@@ -225,8 +244,10 @@ final class AppModel: ObservableObject {
         reordered.insert(moved, at: updatedTargetIndex + (placeAfterTarget ? 1 : 0))
         items = reordered
         objectWillChange.send()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-            self?.refresh(reason: L("Manual reorder"), reconcile: false)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            guard let self else { return }
+            self.applyMenuBarAgentVisibility(reason: L("Manual reorder"))
+            self.refresh(reason: L("Manual reorder"), reconcile: false)
         }
     }
 
@@ -374,6 +395,7 @@ final class AppModel: ObservableObject {
 
     func setDisposition(_ disposition: ItemDisposition, for item: MenuBarItem) {
         Diagnostics.shared.append("User disposition; item=\(item.displayName); id=\(item.id); window=\(item.windowID); hostPID=\(item.hostPID); target=\(disposition.rawValue)")
+        prepareNativePosition(for: item, movingTo: disposition)
         settings.setDisposition(disposition, for: item.id)
         layoutReconciler.reset(item.id)
         DispatchQueue.main.async { [weak self] in self?.objectWillChange.send() }
@@ -488,6 +510,7 @@ final class AppModel: ObservableObject {
             if aiBeforeDisposition(for: item) != decision.disposition {
                 queue.append((item, decision.disposition))
             }
+            prepareNativePosition(for: item, movingTo: decision.disposition)
             settings.setDisposition(decision.disposition, for: item.id)
             layoutReconciler.reset(item.id)
         }
@@ -497,6 +520,15 @@ final class AppModel: ObservableObject {
         aiApplyCompletionMessage = LF("AI layout applied to %d items", queue.count)
         aiRecommendationMessage = LF("Applying AI layout to %d items…", queue.count)
         objectWillChange.send()
+        if MenuBarAgentBridge.isAvailable {
+            aiApplyQueue.removeAll()
+            aiApplyChangedCount = 0
+            aiApplyCompletionMessage = ""
+            applyMenuBarAgentVisibility(reason: L("AI layout application"))
+            aiRecommendationMessage = LF("AI layout applied to %d items", queue.count)
+            refresh(reason: L("AI layout application"), reconcile: false)
+            return
+        }
         processNextAIApply()
     }
 
@@ -512,6 +544,9 @@ final class AppModel: ObservableObject {
         guard let aiUndoPolicies else { return }
         var queue = [(MenuBarItem, ItemDisposition)]()
         for (id, disposition) in aiUndoPolicies {
+            if let item = aiRecommendationItems.first(where: { $0.id == id }) {
+                prepareNativePosition(for: item, movingTo: disposition)
+            }
             settings.setDisposition(disposition, for: id)
             layoutReconciler.reset(id)
             if let item = aiRecommendationItems.first(where: { $0.id == id }),
@@ -526,6 +561,15 @@ final class AppModel: ObservableObject {
         aiApplyCompletionMessage = L("Previous menu bar layout restored")
         aiRecommendationMessage = L("Restoring the previous menu bar layout…")
         objectWillChange.send()
+        if MenuBarAgentBridge.isAvailable {
+            aiApplyQueue.removeAll()
+            aiApplyChangedCount = 0
+            aiApplyCompletionMessage = ""
+            applyMenuBarAgentVisibility(reason: L("AI layout application"))
+            aiRecommendationMessage = L("Previous menu bar layout restored")
+            refresh(reason: L("AI layout application"), reconcile: false)
+            return
+        }
         processNextAIApply()
     }
 
@@ -805,6 +849,21 @@ final class AppModel: ObservableObject {
         if let retryDate = failedMoveUntil[id], retryDate > .now { return false }
         guard let lastMove = lastMoveByItem[id] else { return true }
         return Date.now.timeIntervalSince(lastMove) > 4
+    }
+
+    private func prepareNativePosition(for item: MenuBarItem, movingTo disposition: ItemDisposition) {
+        guard MenuBarAgentBridge.isAvailable else { return }
+        let currentDisposition = settings.disposition(for: item)
+        switch disposition {
+        case .hidden where currentDisposition != .hidden:
+            settings.rememberPosition(item.frame.minX, for: item.id)
+        case .visible where currentDisposition == .hidden:
+            if let position = settings.rememberedPosition(for: item.id) {
+                _ = MenuBarAgentBridge.restorePosition(position, for: item.semanticIdentifier)
+            }
+        default:
+            break
+        }
     }
 
     private var enumerationName: String {

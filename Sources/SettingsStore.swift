@@ -20,6 +20,7 @@ final class SettingsStore: ObservableObject {
         static let aiLastRecommendationDate = "aiLastRecommendationDate.v1"
         static let aiRecommendationDates = "aiRecommendationDates.v1"
         static let aiItemDescriptions = "aiItemDescriptions.v1"
+        static let hiddenItemPositions = "hiddenItemPositions.v1"
     }
 
     @Published var policies: [String: ItemDisposition] {
@@ -73,6 +74,10 @@ final class SettingsStore: ObservableObject {
 
     @Published private(set) var aiItemDescriptions: [String: [String: String]] {
         didSet { persistAIItemDescriptions() }
+    }
+
+    private var hiddenItemPositions: [String: Double] = [:] {
+        didSet { defaults.set(hiddenItemPositions, forKey: Key.hiddenItemPositions) }
     }
 
     private let defaults = UserDefaults.standard
@@ -137,6 +142,9 @@ final class SettingsStore: ObservableObject {
         } else {
             aiItemDescriptions = [:]
         }
+        hiddenItemPositions = defaults.dictionary(forKey: Key.hiddenItemPositions)?.compactMapValues {
+            ($0 as? NSNumber)?.doubleValue
+        } ?? [:]
 
         // Persist the sanitized values so invalid identities from pre-0.1.3
         // builds cannot return on the next launch.
@@ -154,6 +162,14 @@ final class SettingsStore: ObservableObject {
 
     func setDisposition(_ disposition: ItemDisposition, for id: String) {
         policies[id] = disposition
+    }
+
+    func rememberPosition(_ position: Double, for id: String) {
+        hiddenItemPositions[id] = position
+    }
+
+    func rememberedPosition(for id: String) -> Double? {
+        hiddenItemPositions[id]
     }
 
     func aiDescription(for id: String, language: AppLanguage) -> String? {

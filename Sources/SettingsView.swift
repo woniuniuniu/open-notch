@@ -742,14 +742,80 @@ private struct MenuItemsPane: View {
                         .frame(maxWidth: .infinity, minHeight: 180)
                     }
                 } else {
-                    GlassPanel(title: L("Manual Management"), systemImage: "slider.horizontal.3", accent: OpenNotchTheme.blue) {
-                        LazyVStack(spacing: 0) {
-                            ForEach(Array(model.filteredItems.enumerated()), id: \.element.id) { index, item in
-                                MenuItemRow(item: item)
-                                if index < model.filteredItems.count - 1 {
-                                    Divider()
-                                        .opacity(0.55)
+                    if !model.filteredVisibleItems.isEmpty {
+                        GlassPanel(
+                            title: LF("Visible Items (%d)", model.filteredVisibleItems.count),
+                            systemImage: "eye.fill",
+                            accent: OpenNotchTheme.cyan
+                        ) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(L("Drag the handle to reorder visible menu bar items."))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                LazyVStack(spacing: 0) {
+                                    ForEach(Array(model.filteredVisibleItems.enumerated()), id: \.element.id) { index, item in
+                                        MenuItemRow(item: item, allowsReordering: true)
+                                        if index < model.filteredVisibleItems.count - 1 {
+                                            Divider().opacity(0.55)
+                                        }
+                                    }
                                 }
+                            }
+                        }
+                    }
+
+                    if !model.filteredHiddenItems.isEmpty {
+                        GlassPanel(
+                            title: LF("Hidden Items (%d)", model.filteredHiddenItems.count),
+                            systemImage: "eye.slash.fill",
+                            accent: Color.gray
+                        ) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(L("Hidden items keep their previous positions and do not participate in sorting."))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                LazyVStack(spacing: 0) {
+                                    ForEach(Array(model.filteredHiddenItems.enumerated()), id: \.element.id) { index, item in
+                                        MenuItemRow(item: item, allowsReordering: false)
+                                        if index < model.filteredHiddenItems.count - 1 {
+                                            Divider().opacity(0.55)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if !model.filteredInactiveItems.isEmpty {
+                        GlassPanel(
+                            title: LF("Not Running (%d)", model.filteredInactiveItems.count),
+                            systemImage: "moon.zzz.fill",
+                            accent: OpenNotchTheme.yellow
+                        ) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(L("These are saved historical items. They will return to the visible section when their apps run again."))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                LazyVStack(spacing: 0) {
+                                    ForEach(Array(model.filteredInactiveItems.enumerated()), id: \.element.id) { index, item in
+                                        MenuItemRow(item: item, allowsReordering: false)
+                                        if index < model.filteredInactiveItems.count - 1 {
+                                            Divider().opacity(0.55)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if model.filteredVisibleItems.isEmpty && !model.filteredHiddenItems.isEmpty {
+                        GlassPanel {
+                            HStack(spacing: 10) {
+                                Image(systemName: "info.circle")
+                                    .foregroundStyle(OpenNotchTheme.blue)
+                                Text(L("Show an item to return it to its previous position and make it sortable again."))
+                                    .font(.caption)
+                                Spacer()
                             }
                         }
                     }
@@ -766,16 +832,25 @@ private struct MenuItemRow: View {
     @State private var isHovering = false
     @State private var isDropTargeted = false
     let item: MenuBarItem
+    let allowsReordering: Bool
 
     var body: some View {
         HStack(spacing: 11) {
-            if MenuBarAgentBridge.isAvailable {
+            if MenuBarAgentBridge.isAvailable && allowsReordering {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.tertiary)
-                    .frame(width: 14)
+                    .frame(width: 28, height: 40)
+                    .contentShape(Rectangle())
                     .help(L("Drag to reorder"))
                     .accessibilityLabel(L("Drag to reorder"))
+                    .onDrag {
+                        NSItemProvider(object: item.id as NSString)
+                    } preview: {
+                        Label(item.displayName, systemImage: item.symbolName)
+                            .padding(8)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    }
             }
 
             MenuItemIcon(item: item)
@@ -808,19 +883,14 @@ private struct MenuItemRow: View {
             .disabled(item.isOneDrive && SettingsStore.shared.oneDriveGuardianEnabled)
         }
         .padding(.horizontal, 7)
-        .frame(height: 52)
+        .frame(height: 60)
         .background((isHovering || isDropTargeted) ? OpenNotchTheme.hoverFill(for: colorScheme) : .clear)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .onHover { isHovering = $0 }
-        .onDrag {
-            NSItemProvider(object: item.id as NSString)
-        } preview: {
-            Label(item.displayName, systemImage: item.symbolName)
-                .padding(8)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-        }
         .onDrop(of: [UTType.text], isTargeted: $isDropTargeted) { providers in
-            guard MenuBarAgentBridge.isAvailable, let provider = providers.first else { return false }
+            guard MenuBarAgentBridge.isAvailable, allowsReordering, let provider = providers.first else {
+                return false
+            }
             provider.loadObject(ofClass: NSString.self) { object, _ in
                 guard let sourceID = object as? String else { return }
                 Task { @MainActor in
@@ -849,7 +919,7 @@ private struct VisibilityControl: View {
             option(.visible, symbol: "eye.fill", tint: OpenNotchTheme.cyan)
             option(.hidden, symbol: "eye.slash.fill", tint: Color.gray)
         }
-        .padding(3)
+        .padding(4)
         .background(.black.opacity(0.13), in: Capsule())
         .overlay { Capsule().stroke(.white.opacity(0.08), lineWidth: 1) }
         .opacity(isEnabled ? 1 : 0.45)
@@ -864,9 +934,10 @@ private struct VisibilityControl: View {
             }
         } label: {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(selection == disposition ? Color.white : Color.secondary)
-                .frame(width: 32, height: 25)
+                .frame(width: 44, height: 34)
+                .contentShape(Rectangle())
                 .background {
                     if selection == disposition {
                         Capsule()
@@ -893,10 +964,9 @@ private struct MenuItemIcon: View {
                     .resizable()
                     .scaledToFit()
             } else if item.symbolName == "app.dashed" {
-                Image(nsImage: NSApplication.shared.applicationIconImage)
-                    .resizable()
-                    .scaledToFit()
-                    .opacity(0.65)
+                Image(systemName: "app.dashed")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.secondary)
             } else {
                 Image(systemName: item.symbolName)
                     .font(.system(size: 16, weight: .medium))

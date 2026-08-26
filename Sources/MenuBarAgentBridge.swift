@@ -33,9 +33,9 @@ enum MenuBarAgentBridge {
         return result.isEmpty ? nil : result
     }
 
-    /// Changes MenuBarAgent's persisted preferred position without generating
-    /// synthetic mouse events. This is intentionally limited to known status
-    /// items and leaves every other preferred position untouched.
+    /// Updates the preferred order, then asks MenuBarAgent to reload it. This
+    /// avoids both global dragging and the stale in-memory position cache that
+    /// otherwise ignores preference changes until the next agent launch.
     @MainActor
     static func moveItem(_ sourceKey: String, adjacentTo targetKey: String, placeAfterTarget: Bool) -> Bool {
         guard
@@ -47,7 +47,6 @@ enum MenuBarAgentBridge {
             current[sourceKey] != nil,
             current[targetKey] != nil
         else { return false }
-
         var orderedKeys = current.keys.sorted {
             let lhs = current[$0] ?? 0
             let rhs = current[$1] ?? 0
@@ -57,7 +56,6 @@ enum MenuBarAgentBridge {
         guard let targetIndex = orderedKeys.firstIndex(of: targetKey) else { return false }
         let insertionIndex = targetIndex + (placeAfterTarget ? 1 : 0)
         orderedKeys.insert(sourceKey, at: insertionIndex)
-
         let lower = insertionIndex > 0 ? current[orderedKeys[insertionIndex - 1]] : nil
         let upper = insertionIndex + 1 < orderedKeys.count ? current[orderedKeys[insertionIndex + 1]] : nil
         let newPosition: Double
@@ -65,8 +63,6 @@ enum MenuBarAgentBridge {
         case let (lower?, upper?) where upper > lower:
             newPosition = lower + ((upper - lower) / 2)
         case let (lower?, upper?):
-            // Equal legacy positions are common. A fractional nudge preserves
-            // all neighbours while still producing a deterministic order.
             newPosition = placeAfterTarget ? max(lower, upper) + 0.125 : min(lower, upper) - 0.125
         case let (nil, upper?):
             newPosition = upper - 16
@@ -75,16 +71,38 @@ enum MenuBarAgentBridge {
         default:
             return false
         }
-
         current[sourceKey] = newPosition
         let suite = UserDefaults(suiteName: domain)
         suite?.set(current, forKey: positionsKey)
         let synchronized = suite?.synchronize() ?? false
+        let reloaded = synchronized && reloadMenuBarAgent()
         Diagnostics.shared.append(
-            "MenuBarAgent reorder persisted; source=\(sourceKey); target=\(targetKey); " +
-            "after=\(placeAfterTarget); position=\(newPosition); synchronized=\(synchronized)"
+            "MenuBarAgent reorder; source=\(sourceKey); target=\(targetKey); " +
+            "after=\(placeAfterTarget); position=\(newPosition); reloaded=\(reloaded)"
         )
+        return reloaded
+    }
+
+    @MainActor
+    static func restorePosition(_ position: Double, for key: String) -> Bool {
+        guard isAvailable, key.hasPrefix("status:"), var current = positions(), current[key] != nil else {
+            return false
+        }
+        current[key] = position
+        let suite = UserDefaults(suiteName: domain)
+        suite?.set(current, forKey: positionsKey)
+        let synchronized = suite?.synchronize() ?? false
+        Diagnostics.shared.append("MenuBarAgent position restored; key=\(key); position=\(position); synchronized=\(synchronized)")
         return synchronized
+    }
+
+    @MainActor
+    private static func reloadMenuBarAgent() -> Bool {
+        guard let application = NSWorkspace.shared.runningApplications.first(where: {
+            $0.bundleIdentifier == "com.apple.MenuBarAgent"
+        }) else { return false }
+        if application.terminate() { return true }
+        return Darwin.kill(application.processIdentifier, SIGTERM) == 0
     }
 
     private static func makeItem(key: String, position: Double) -> MenuBarItem? {
@@ -102,7 +120,7 @@ enum MenuBarAgentBridge {
                 windowID: syntheticWindowID(for: key), hostPID: app?.processIdentifier ?? 0,
                 hostBundleIdentifier: bundleID, semanticBundleIdentifier: bundleID,
                 semanticIdentifier: key, rawTitle: itemID, displayName: name,
-                symbolName: bundleID == "com.microsoft.OneDrive" ? "cloud.fill" : "app.dashed",
+                symbolName: symbolName(for: bundleID, itemID: itemID),
                 frame: CGRect(x: position, y: 0, width: 1, height: 24),
                 isProtected: bundleID == Bundle.main.bundleIdentifier
             )
@@ -135,6 +153,17 @@ enum MenuBarAgentBridge {
     private static func displayName(from bundleID: String) -> String {
         let component = bundleID.split(separator: ".").last.map(String.init) ?? bundleID
         return component.replacingOccurrences(of: "-", with: " ")
+    }
+
+    private static func symbolName(for bundleID: String, itemID: String) -> String {
+        if bundleID == "com.microsoft.OneDrive" { return "cloud.fill" }
+        if itemID.localizedCaseInsensitiveContains("siri") { return "waveform.circle.fill" }
+        let known: [String: String] = [
+            "com.apple.Spotlight": "magnifyingglass",
+            "com.apple.TextInputMenuAgent": "character.cursor.ibeam",
+            "com.apple.systemuiserver": "waveform.circle.fill",
+        ]
+        return known[bundleID] ?? "app.dashed"
     }
 
     /// Keeps the existing model's per-item indexing intact without pretending
