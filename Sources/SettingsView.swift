@@ -683,6 +683,8 @@ private struct MenuItemsPane: View {
 
     var body: some View {
         PageScaffold(title: L("Menu Bar Items"), subtitle: LF("%d manageable items", model.filteredItems.count)) {
+            AIOrganizerSection()
+
             if !model.hasAccessibilityPermission {
                 PermissionBanner()
             } else {
@@ -739,7 +741,7 @@ private struct MenuItemsPane: View {
                         .frame(maxWidth: .infinity, minHeight: 180)
                     }
                 } else {
-                    GlassPanel {
+                    GlassPanel(title: L("Manual Management"), systemImage: "slider.horizontal.3", accent: OpenNotchTheme.blue) {
                         LazyVStack(spacing: 0) {
                             ForEach(Array(model.filteredItems.enumerated()), id: \.element.id) { index, item in
                                 MenuItemRow(item: item)
@@ -759,6 +761,7 @@ private struct MenuItemsPane: View {
 private struct MenuItemRow: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var settings = SettingsStore.shared
     @State private var isHovering = false
     let item: MenuBarItem
 
@@ -778,10 +781,11 @@ private struct MenuItemRow: View {
                             .foregroundStyle(OpenNotchTheme.magenta)
                     }
                 }
-                Text(item.detail.isEmpty ? item.semanticBundleIdentifier : item.detail)
+                Text(secondaryText)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .help(item.semanticBundleIdentifier)
             }
 
             Spacer(minLength: 12)
@@ -799,6 +803,11 @@ private struct MenuItemRow: View {
         .onHover { isHovering = $0 }
         .accessibilityElement(children: .contain)
     }
+
+    private var secondaryText: String {
+        settings.aiDescription(for: item.id, language: settings.language)
+            ?? (item.detail.isEmpty ? item.semanticBundleIdentifier : item.detail)
+    }
 }
 
 private struct VisibilityControl: View {
@@ -810,7 +819,7 @@ private struct VisibilityControl: View {
     var body: some View {
         HStack(spacing: 3) {
             option(.visible, symbol: "eye.fill", tint: OpenNotchTheme.cyan)
-            option(.hidden, symbol: "eye.slash.fill", tint: OpenNotchTheme.magenta)
+            option(.hidden, symbol: "eye.slash.fill", tint: Color.gray)
         }
         .padding(3)
         .background(.black.opacity(0.13), in: Capsule())
@@ -971,6 +980,183 @@ private struct OneDrivePane: View {
     }
 }
 
+private struct AIOrganizerSection: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        GlassPanel(title: L("AI Organize"), systemImage: "sparkles.rectangle.stack.fill", accent: OpenNotchTheme.cyan) {
+            VStack(alignment: .leading, spacing: 12) {
+                if model.isRequestingAIRecommendation {
+                    AIRequestProgressView(phase: model.aiRequestPhase)
+                } else if let recommendation = model.aiRecommendation {
+                    HStack(spacing: 7) {
+                        ForEach(recommendation.plans) { plan in
+                            Button {
+                                model.selectedAIPlanID = plan.id
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Text(plan.title).lineLimit(1)
+                                    if plan.id == recommendation.recommendedPlanID {
+                                        Image(systemName: "checkmark.seal.fill")
+                                    }
+                                }
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 9)
+                                .frame(height: 28)
+                                .background(
+                                    model.selectedAIPlanID == plan.id ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.055),
+                                    in: Capsule()
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    if let plan = recommendation.plans.first(where: { $0.id == model.selectedAIPlanID }) {
+                        Text(plan.summary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        AIBeforeAfterPreview(plan: plan)
+                        HStack(spacing: 8) {
+                            Text(model.aiAvailabilityMessage)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if model.canRequestAIRecommendation {
+                                Button {
+                                    model.requestAIRecommendation()
+                                } label: {
+                                    Label(L("Regenerate"), systemImage: "arrow.clockwise")
+                                }
+                                .systemGlassButton()
+                            }
+                            if model.canUndoAIRecommendation && !model.isApplyingAIRecommendation {
+                                Button(L("Undo")) { model.undoAIRecommendation() }
+                                    .systemGlassButton()
+                            }
+                            Button(L("Apply Selected Layout")) { model.applyAIRecommendation(plan) }
+                                .systemGlassButton(prominent: true)
+                                .disabled(!model.canApplyAIRecommendation || model.isApplyingAIRecommendation)
+                        }
+                    }
+                } else {
+                    Text(L("AI reviews the latest scan and prepares two layouts. View the Before and After comparison, then apply only when you are ready."))
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack {
+                        Text(model.aiAvailabilityMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            model.requestAIRecommendation()
+                        } label: {
+                            if model.isRequestingAIRecommendation {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Label(L("Click to Generate Plan"), systemImage: "sparkles")
+                            }
+                        }
+                        .systemGlassButton(prominent: true)
+                        .disabled(!model.canRequestAIRecommendation || model.isRequestingAIRecommendation)
+                    }
+                }
+
+                if let message = model.aiRecommendationMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+
+private struct AIRequestProgressView: View {
+    let phase: AIRequestPhase?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 9) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(phase?.title ?? L("AI is analyzing the menu bar"))
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            ProgressView()
+                .progressViewStyle(.linear)
+            Text(L("The latest scan is fixed while the AI result is being generated. Nothing will change until you apply it."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct AIBeforeAfterPreview: View {
+    @EnvironmentObject private var model: AppModel
+    let plan: AIRecommendationPlan
+
+    private var decisions: [(MenuBarItem, AIRecommendationItem)] {
+        plan.items.compactMap { decision in
+            guard let item = model.item(forAIRecommendationID: decision.id) else { return nil }
+            return (item, decision)
+        }
+    }
+
+    var body: some View {
+        let changes = decisions.filter { model.aiBeforeDisposition(for: $0.0) != $0.1.disposition }
+        return VStack(alignment: .leading, spacing: 8) {
+            menuBarPreview(title: L("Before"), useProposedState: false)
+            Image(systemName: "arrow.down")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+            menuBarPreview(title: L("After"), useProposedState: true)
+            Text(LF("%d items will change", changes.count))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func menuBarPreview(title: String, useProposedState: Bool) -> some View {
+        let visibleItems = decisions.filter { item, decision in
+            (useProposedState ? decision.disposition : model.aiBeforeDisposition(for: item)) == .visible
+        }.map(\.0)
+
+        return VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Text(title)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(visibleItems.count) / \(decisions.count)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(visibleItems) { item in
+                        MenuItemIcon(item: item)
+                            .frame(width: 24, height: 24)
+                            .help(item.displayName)
+                    }
+                }
+                .frame(minWidth: 0, minHeight: 28, alignment: .leading)
+            }
+        }
+        .padding(9)
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
 private struct GeneralPane: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject private var settings = SettingsStore.shared
@@ -1118,6 +1304,21 @@ private struct AboutPane: View {
                         Button(L("View Notices")) { openBundledDocument(resource: "NOTICE", extension: "md") }
                             .systemGlassButton()
                     }
+                }
+            }
+
+            GlassPanel(title: L("Privacy"), systemImage: "lock.shield.fill", accent: OpenNotchTheme.green) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L("AI privacy details"))
+                        .font(.caption.weight(.semibold))
+                    Text(L("Only app names, bundle identifiers, and current visible or hidden states are sent. Screenshots, paths, usernames, and Accessibility data never leave your Mac."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(L("AI requests are processed by the Open Notch service and DeepSeek. Each installation can request one new recommendation every 24 hours."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 

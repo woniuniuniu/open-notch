@@ -9,6 +9,12 @@ final class ApplicationIconResolver {
 
     private init() {}
 
+    func preload(_ items: [MenuBarItem]) {
+        for item in items {
+            _ = icon(for: item)
+        }
+    }
+
     func icon(for item: MenuBarItem) -> NSImage? {
         let bundleIdentifier = item.semanticBundleIdentifier
         guard

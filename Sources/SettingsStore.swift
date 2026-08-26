@@ -16,6 +16,10 @@ final class SettingsStore: ObservableObject {
         static let language = Localization.languageDefaultsKey
         static let appearance = "appearanceMode"
         static let showInDock = "showInDock"
+        static let aiInstallationID = "aiInstallationID.v1"
+        static let aiLastRecommendationDate = "aiLastRecommendationDate.v1"
+        static let aiRecommendationDates = "aiRecommendationDates.v1"
+        static let aiItemDescriptions = "aiItemDescriptions.v1"
     }
 
     @Published var policies: [String: ItemDisposition] {
@@ -58,6 +62,19 @@ final class SettingsStore: ObservableObject {
         didSet { defaults.set(showInDock, forKey: Key.showInDock) }
     }
 
+    let aiInstallationID: String
+
+    @Published private(set) var aiRecommendationDates: [Date] {
+        didSet {
+            guard let data = try? JSONEncoder().encode(aiRecommendationDates) else { return }
+            defaults.set(data, forKey: Key.aiRecommendationDates)
+        }
+    }
+
+    @Published private(set) var aiItemDescriptions: [String: [String: String]] {
+        didSet { persistAIItemDescriptions() }
+    }
+
     private let defaults = UserDefaults.standard
 
     private init() {
@@ -95,6 +112,31 @@ final class SettingsStore: ObservableObject {
         language = AppLanguage(rawValue: defaults.string(forKey: Key.language) ?? "") ?? .english
         appearanceMode = AppearanceMode(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
         showInDock = defaults.object(forKey: Key.showInDock) as? Bool ?? false
+        if let storedID = defaults.string(forKey: Key.aiInstallationID), !storedID.isEmpty {
+            aiInstallationID = storedID
+        } else {
+            let generatedID = UUID().uuidString.lowercased()
+            aiInstallationID = generatedID
+            defaults.set(generatedID, forKey: Key.aiInstallationID)
+        }
+        if
+            let data = defaults.data(forKey: Key.aiRecommendationDates),
+            let decoded = try? JSONDecoder().decode([Date].self, from: data)
+        {
+            aiRecommendationDates = decoded
+        } else if let legacyDate = defaults.object(forKey: Key.aiLastRecommendationDate) as? Date {
+            aiRecommendationDates = [legacyDate]
+        } else {
+            aiRecommendationDates = []
+        }
+        if
+            let data = defaults.data(forKey: Key.aiItemDescriptions),
+            let decoded = try? JSONDecoder().decode([String: [String: String]].self, from: data)
+        {
+            aiItemDescriptions = decoded
+        } else {
+            aiItemDescriptions = [:]
+        }
 
         // Persist the sanitized values so invalid identities from pre-0.1.3
         // builds cannot return on the next launch.
@@ -112,6 +154,23 @@ final class SettingsStore: ObservableObject {
 
     func setDisposition(_ disposition: ItemDisposition, for id: String) {
         policies[id] = disposition
+    }
+
+    func aiDescription(for id: String, language: AppLanguage) -> String? {
+        aiItemDescriptions[language.rawValue]?[id]
+    }
+
+    func setAIDescriptions(_ descriptions: [String: String], language: AppLanguage) {
+        guard !descriptions.isEmpty else { return }
+        var localizedDescriptions = aiItemDescriptions[language.rawValue] ?? [:]
+        localizedDescriptions.merge(descriptions) { _, new in new }
+        aiItemDescriptions[language.rawValue] = localizedDescriptions
+    }
+
+    func recordAIRecommendation(at date: Date = .now) {
+        aiRecommendationDates = aiRecommendationDates.filter {
+            Calendar.current.isDate($0, inSameDayAs: date)
+        } + [date]
     }
 
     func applyAppearance() {
@@ -183,6 +242,11 @@ final class SettingsStore: ObservableObject {
     private func persistWindowBindings() {
         guard let data = try? JSONEncoder().encode(windowBindings) else { return }
         defaults.set(data, forKey: Key.windowBindings)
+    }
+
+    private func persistAIItemDescriptions() {
+        guard let data = try? JSONEncoder().encode(aiItemDescriptions) else { return }
+        defaults.set(data, forKey: Key.aiItemDescriptions)
     }
 
     private static func isAnonymousStableID(_ stableID: String) -> Bool {
