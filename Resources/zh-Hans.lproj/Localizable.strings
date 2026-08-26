@@ -161,6 +161,10 @@
 "%d items will change" = "%d 个图标将发生变化";
 "No changes are needed" = "当前布局无需调整";
 "Manual Management" = "手动管理";
+"Drag to reorder" = "拖动排序";
+"Manual reorder" = "手动排序";
+"Could not reorder menu bar item" = "无法调整菜单栏图标顺序";
+"Restart failed" = "重新启动失败";
 "AI privacy details" = "AI 智能整理";
 "AI requests are processed by the Open Notch service and DeepSeek. Each installation can request up to three new recommendations per local day." = "AI 请求由若栏服务和 DeepSeek 处理。每个安装实例每天最多可以生成 3 次新的建议。";
 "Diagnostics" = "诊断";

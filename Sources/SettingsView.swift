@@ -1,6 +1,7 @@
 import AppKit
 import ServiceManagement
 import SwiftUI
+import UniformTypeIdentifiers
 
 private enum OpenNotchTheme {
     static let blue = Color(red: 0.24, green: 0.63, blue: 0.96)
@@ -763,10 +764,20 @@ private struct MenuItemRow: View {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var settings = SettingsStore.shared
     @State private var isHovering = false
+    @State private var isDropTargeted = false
     let item: MenuBarItem
 
     var body: some View {
         HStack(spacing: 11) {
+            if MenuBarAgentBridge.isAvailable {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 14)
+                    .help(L("Drag to reorder"))
+                    .accessibilityLabel(L("Drag to reorder"))
+            }
+
             MenuItemIcon(item: item)
                 .frame(width: 28, height: 28)
 
@@ -798,9 +809,26 @@ private struct MenuItemRow: View {
         }
         .padding(.horizontal, 7)
         .frame(height: 52)
-        .background(isHovering ? OpenNotchTheme.hoverFill(for: colorScheme) : .clear)
+        .background((isHovering || isDropTargeted) ? OpenNotchTheme.hoverFill(for: colorScheme) : .clear)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .onHover { isHovering = $0 }
+        .onDrag {
+            NSItemProvider(object: item.id as NSString)
+        } preview: {
+            Label(item.displayName, systemImage: item.symbolName)
+                .padding(8)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        }
+        .onDrop(of: [UTType.text], isTargeted: $isDropTargeted) { providers in
+            guard MenuBarAgentBridge.isAvailable, let provider = providers.first else { return false }
+            provider.loadObject(ofClass: NSString.self) { object, _ in
+                guard let sourceID = object as? String else { return }
+                Task { @MainActor in
+                    model.reorderMenuBarItem(sourceID: sourceID, targetID: item.id)
+                }
+            }
+            return true
+        }
         .accessibilityElement(children: .contain)
     }
 

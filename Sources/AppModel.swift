@@ -25,6 +25,7 @@ final class AppModel: ObservableObject {
     private var statusBar: StatusBarController?
     private var timer: Timer?
     private var observers = [NSObjectProtocol]()
+    private var isStopping = false
     private var isMoving = false
     private var pendingRefresh: (reason: String, reconcile: Bool)?
     private var itemsByWindowID = [CGWindowID: MenuBarItem]()
@@ -97,6 +98,7 @@ final class AppModel: ObservableObject {
     }
 
     func start(openSettings: @escaping () -> Void) {
+        isStopping = false
         openSettingsAction = openSettings
         hasAccessibilityPermission = AccessibilityResolver.isTrusted()
         launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -134,6 +136,20 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func stop() {
+        isStopping = true
+        timer?.invalidate()
+        timer = nil
+        for observer in observers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            NotificationCenter.default.removeObserver(observer)
+        }
+        observers.removeAll()
+        pendingRefresh = nil
+        menuBarAgentVisibility.invalidate()
+        Diagnostics.shared.append("App stopping; MenuBarAgent restriction released")
+    }
+
     func requestAccessibilityPermission() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
@@ -160,6 +176,10 @@ final class AppModel: ObservableObject {
     }
 
     func restartApplication() {
+        // Release the native visibility assertion before the replacement
+        // process starts. Keeping both alive even briefly can leave the old
+        // process in control of hidden items.
+        stop()
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         task.arguments = ["-n", Bundle.main.bundlePath]
@@ -171,6 +191,42 @@ final class AppModel: ObservableObject {
         } catch {
             Diagnostics.shared.append("Restart failed; error=\(error.localizedDescription)")
             addEvent(LF("Restart failed: %@", error.localizedDescription))
+            isStopping = false
+            configureObservers()
+            configureTimer()
+            refresh(reason: L("Restart failed"), reconcile: true)
+        }
+    }
+
+    func reorderMenuBarItem(sourceID: String, targetID: String) {
+        guard MenuBarAgentBridge.isAvailable,
+              let sourceIndex = items.firstIndex(where: { $0.id == sourceID }),
+              let targetIndex = items.firstIndex(where: { $0.id == targetID }),
+              sourceIndex != targetIndex
+        else { return }
+
+        let source = items[sourceIndex]
+        let target = items[targetIndex]
+        guard !source.isProtected, !target.isProtected else { return }
+        let placeAfterTarget = sourceIndex < targetIndex
+        guard MenuBarAgentBridge.moveItem(
+            source.semanticIdentifier,
+            adjacentTo: target.semanticIdentifier,
+            placeAfterTarget: placeAfterTarget
+        ) else {
+            Diagnostics.shared.append("MenuBarAgent reorder failed; source=\(source.id); target=\(target.id)")
+            addEvent(L("Could not reorder menu bar item"))
+            return
+        }
+
+        var reordered = items
+        let moved = reordered.remove(at: sourceIndex)
+        guard let updatedTargetIndex = reordered.firstIndex(where: { $0.id == targetID }) else { return }
+        reordered.insert(moved, at: updatedTargetIndex + (placeAfterTarget ? 1 : 0))
+        items = reordered
+        objectWillChange.send()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            self?.refresh(reason: L("Manual reorder"), reconcile: false)
         }
     }
 
@@ -227,6 +283,7 @@ final class AppModel: ObservableObject {
     }
 
     func refresh(reason: String = L("Scan"), reconcile: Bool = false) {
+        guard !isStopping else { return }
         guard !isRequestingAIRecommendation else {
             if pendingRefresh == nil || reconcile {
                 pendingRefresh = (reason, reconcile)
@@ -256,6 +313,10 @@ final class AppModel: ObservableObject {
             let scanned = MenuBarDiscovery.scan(excluding: excluded, previousItems: previousItems)
             DispatchQueue.main.async {
                 guard let self else { return }
+                guard !self.isStopping else {
+                    self.isScanning = false
+                    return
+                }
                 let scanChanged = !self.isEquivalentScan(scanned)
                 self.itemsByWindowID = Dictionary(
                     scanned.map { ($0.windowID, $0) },
@@ -263,7 +324,12 @@ final class AppModel: ObservableObject {
                 )
                 if scanChanged {
                     self.items = scanned.sorted { lhs, rhs in
-                        if lhs.isOneDrive != rhs.isOneDrive { return lhs.isOneDrive }
+                        // MenuBarAgent positions are the user's physical order.
+                        // Preserve them on macOS 27 so drag sorting remains
+                        // stable; the legacy path keeps OneDrive prominent.
+                        if !MenuBarAgentBridge.isAvailable, lhs.isOneDrive != rhs.isOneDrive {
+                            return lhs.isOneDrive
+                        }
                         return lhs.frame.minX < rhs.frame.minX
                     }
                 }
@@ -746,7 +812,7 @@ final class AppModel: ObservableObject {
     }
 
     private func applyMenuBarAgentVisibility(reason: String) {
-        guard MenuBarAgentBridge.isAvailable else { return }
+        guard MenuBarAgentBridge.isAvailable, !isStopping else { return }
         guard !settings.isExpanded else {
             menuBarAgentVisibility.invalidate()
             Diagnostics.shared.append("MenuBarAgent restriction removed; reason=\(reason)")

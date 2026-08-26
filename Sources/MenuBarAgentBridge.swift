@@ -33,6 +33,60 @@ enum MenuBarAgentBridge {
         return result.isEmpty ? nil : result
     }
 
+    /// Changes MenuBarAgent's persisted preferred position without generating
+    /// synthetic mouse events. This is intentionally limited to known status
+    /// items and leaves every other preferred position untouched.
+    @MainActor
+    static func moveItem(_ sourceKey: String, adjacentTo targetKey: String, placeAfterTarget: Bool) -> Bool {
+        guard
+            isAvailable,
+            sourceKey.hasPrefix("status:"),
+            targetKey.hasPrefix("status:"),
+            sourceKey != targetKey,
+            var current = positions(),
+            current[sourceKey] != nil,
+            current[targetKey] != nil
+        else { return false }
+
+        var orderedKeys = current.keys.sorted {
+            let lhs = current[$0] ?? 0
+            let rhs = current[$1] ?? 0
+            return lhs == rhs ? $0 < $1 : lhs < rhs
+        }
+        orderedKeys.removeAll { $0 == sourceKey }
+        guard let targetIndex = orderedKeys.firstIndex(of: targetKey) else { return false }
+        let insertionIndex = targetIndex + (placeAfterTarget ? 1 : 0)
+        orderedKeys.insert(sourceKey, at: insertionIndex)
+
+        let lower = insertionIndex > 0 ? current[orderedKeys[insertionIndex - 1]] : nil
+        let upper = insertionIndex + 1 < orderedKeys.count ? current[orderedKeys[insertionIndex + 1]] : nil
+        let newPosition: Double
+        switch (lower, upper) {
+        case let (lower?, upper?) where upper > lower:
+            newPosition = lower + ((upper - lower) / 2)
+        case let (lower?, upper?):
+            // Equal legacy positions are common. A fractional nudge preserves
+            // all neighbours while still producing a deterministic order.
+            newPosition = placeAfterTarget ? max(lower, upper) + 0.125 : min(lower, upper) - 0.125
+        case let (nil, upper?):
+            newPosition = upper - 16
+        case let (lower?, nil):
+            newPosition = lower + 16
+        default:
+            return false
+        }
+
+        current[sourceKey] = newPosition
+        let suite = UserDefaults(suiteName: domain)
+        suite?.set(current, forKey: positionsKey)
+        let synchronized = suite?.synchronize() ?? false
+        Diagnostics.shared.append(
+            "MenuBarAgent reorder persisted; source=\(sourceKey); target=\(targetKey); " +
+            "after=\(placeAfterTarget); position=\(newPosition); synchronized=\(synchronized)"
+        )
+        return synchronized
+    }
+
     private static func makeItem(key: String, position: Double) -> MenuBarItem? {
         if key.hasPrefix("status:") {
             let payload = String(key.dropFirst("status:".count))
@@ -97,6 +151,7 @@ enum MenuBarAgentBridge {
 final class MenuBarAgentVisibilityController {
     enum ApplyResult { case applied, unavailable, failed(String) }
     private var assertion: NSObject?
+    private var generation: UInt64 = 0
     private let lock = NSLock()
 
     deinit { invalidate() }
@@ -126,6 +181,10 @@ final class MenuBarAgentVisibilityController {
         guard let configured else { completion(.failed("configuration rejected")); return }
 
         let candidate = assertionClass.init()
+        lock.lock()
+        generation &+= 1
+        let requestGeneration = generation
+        lock.unlock()
         let activateSelector = NSSelectorFromString("activateWithConfiguration:completionHandler:")
         typealias CompletionBlock = @convention(block) (NSError?) -> Void
         typealias ActivateIMP = @convention(c) (AnyObject, Selector, AnyObject, CompletionBlock) -> Void
@@ -135,8 +194,18 @@ final class MenuBarAgentVisibilityController {
         let activate = unsafeBitCast(method_getImplementation(activateMethod), to: ActivateIMP.self)
         let callback: CompletionBlock = { [weak self] error in
             guard let self else { return }
-            if let error { completion(.failed(error.localizedDescription)); return }
             self.lock.lock()
+            let isCurrent = self.generation == requestGeneration
+            if !isCurrent {
+                self.lock.unlock()
+                Self.invalidate(candidate)
+                return
+            }
+            if let error {
+                self.lock.unlock()
+                completion(.failed(error.localizedDescription))
+                return
+            }
             let previous = self.assertion
             self.assertion = candidate
             self.lock.unlock()
@@ -148,6 +217,7 @@ final class MenuBarAgentVisibilityController {
 
     func invalidate() {
         lock.lock()
+        generation &+= 1
         let current = assertion
         assertion = nil
         lock.unlock()

@@ -161,6 +161,10 @@
 "%d items will change" = "%d items will change";
 "No changes are needed" = "No changes are needed";
 "Manual Management" = "Manual Management";
+"Drag to reorder" = "Drag to reorder";
+"Manual reorder" = "Manual reorder";
+"Could not reorder menu bar item" = "Could not reorder menu bar item";
+"Restart failed" = "Restart failed";
 "AI privacy details" = "AI-assisted organization";
 "AI requests are processed by the Open Notch service and DeepSeek. Each installation can request up to three new recommendations per local day." = "AI requests are processed by the Open Notch service and DeepSeek. Each installation can request up to three new recommendations per local day.";
 "Diagnostics" = "Diagnostics";

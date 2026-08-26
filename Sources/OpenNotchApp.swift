@@ -20,13 +20,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        terminateOtherInstances()
         SettingsStore.shared.applyAppearance()
         AppModel.shared.start { [weak self] in self?.showSettings() }
         showSettings()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        AppModel.shared.stop()
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    private func terminateOtherInstances() {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let others = NSWorkspace.shared.runningApplications.filter {
+            $0.bundleIdentifier == bundleIdentifier && $0.processIdentifier != ownPID
+        }
+        for application in others {
+            Diagnostics.shared.append("Terminating duplicate instance; pid=\(application.processIdentifier)")
+            application.terminate()
+        }
     }
 
     private func showSettings() {
