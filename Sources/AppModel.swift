@@ -43,10 +43,12 @@ final class AppModel: ObservableObject {
     private var aiApplyQueue = [(MenuBarItem, ItemDisposition)]()
     private var aiApplyChangedCount = 0
     private var aiApplyCompletionMessage = ""
+    private let menuBarAgentVisibility = MenuBarAgentVisibilityController()
 
     private init() {}
 
     var isExpanded: Bool { settings.isExpanded }
+    var canManageMenuBar: Bool { MenuBarAgentBridge.isAvailable || hasAccessibilityPermission }
     var oneDriveItem: MenuBarItem? { items.first(where: \.isOneDrive) }
 
     private var aiRecommendationCountToday: Int {
@@ -98,7 +100,7 @@ final class AppModel: ObservableObject {
         openSettingsAction = openSettings
         hasAccessibilityPermission = AccessibilityResolver.isTrusted()
         launchAtLogin = SMAppService.mainApp.status == .enabled
-        Diagnostics.shared.append("App started; macOS=\(ProcessInfo.processInfo.operatingSystemVersionString); accessibility=\(hasAccessibilityPermission); enumeration=\(WindowServerBridge.enumerationName)")
+        Diagnostics.shared.append("App started; macOS=\(ProcessInfo.processInfo.operatingSystemVersionString); accessibility=\(hasAccessibilityPermission); enumeration=\(enumerationName)")
         // Expansion is a temporary preview, not a preference. Always start with
         // hidden items actually offscreen so the UI matches the menu bar.
         settings.isExpanded = false
@@ -204,7 +206,7 @@ final class AppModel: ObservableObject {
         App: Open Notch \(version) (\(build))
         macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)
         Architecture: \(architecture)
-        Enumeration: \(WindowServerBridge.enumerationName)
+        Enumeration: \(enumerationName)
         Accessibility: \(hasAccessibilityPermission)
         Expanded: \(settings.isExpanded)
         Continuous monitor: \(settings.continuousMonitorEnabled)
@@ -267,9 +269,10 @@ final class AppModel: ObservableObject {
                 }
                 self.updateActualDispositions()
                 self.settings.remember(scanned)
+                self.applyMenuBarAgentVisibility(reason: reason)
                 self.lastScanDate = .now
                 self.isScanning = false
-                Diagnostics.shared.append("Scan finished; items=\(scanned.count); visible=\(self.visibleItems.count); hidden=\(self.hiddenItems.count); accessibility=\(self.hasAccessibilityPermission)")
+                Diagnostics.shared.append("Scan finished; source=\(self.enumerationName); items=\(scanned.count); visible=\(self.visibleItems.count); hidden=\(self.hiddenItems.count); accessibility=\(self.hasAccessibilityPermission)")
                 self.objectWillChange.send()
 
                 if self.identityRebindInProgress {
@@ -308,6 +311,10 @@ final class AppModel: ObservableObject {
         settings.setDisposition(disposition, for: item.id)
         layoutReconciler.reset(item.id)
         DispatchQueue.main.async { [weak self] in self?.objectWillChange.send() }
+        if MenuBarAgentBridge.isAvailable {
+            applyMenuBarAgentVisibility(reason: L("User change"))
+            return
+        }
         move(
             item,
             to: disposition,
@@ -517,9 +524,12 @@ final class AppModel: ObservableObject {
         statusBar?.setExpanded(settings.isExpanded)
         updateStatusBar()
         if settings.isExpanded {
+            if MenuBarAgentBridge.isAvailable { menuBarAgentVisibility.invalidate() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
                 self?.refresh(reason: L("Expand hidden section"), reconcile: false)
             }
+        } else if MenuBarAgentBridge.isAvailable {
+            applyMenuBarAgentVisibility(reason: L("Collapse hidden section"))
         }
         DispatchQueue.main.async { [weak self] in self?.objectWillChange.send() }
     }
@@ -634,6 +644,11 @@ final class AppModel: ObservableObject {
         force: Bool = false,
         collapseAfterSuccess: Bool = false
     ) {
+        if MenuBarAgentBridge.isAvailable {
+            applyMenuBarAgentVisibility(reason: reason)
+            if collapseAfterSuccess { collapseHiddenSection() }
+            return
+        }
         guard !isMoving, hasAccessibilityPermission else {
             Diagnostics.shared.append("Move skipped; item=\(item.displayName); alreadyMoving=\(isMoving); accessibility=\(hasAccessibilityPermission)")
             return
@@ -724,6 +739,37 @@ final class AppModel: ObservableObject {
         if let retryDate = failedMoveUntil[id], retryDate > .now { return false }
         guard let lastMove = lastMoveByItem[id] else { return true }
         return Date.now.timeIntervalSince(lastMove) > 4
+    }
+
+    private var enumerationName: String {
+        MenuBarAgentBridge.isAvailable ? MenuBarAgentBridge.enumerationName : WindowServerBridge.enumerationName
+    }
+
+    private func applyMenuBarAgentVisibility(reason: String) {
+        guard MenuBarAgentBridge.isAvailable else { return }
+        guard !settings.isExpanded else {
+            menuBarAgentVisibility.invalidate()
+            Diagnostics.shared.append("MenuBarAgent restriction removed; reason=\(reason)")
+            return
+        }
+        var allowed = Set(items.compactMap { item -> String? in
+            guard !item.semanticIdentifier.hasPrefix("module:") else { return nil }
+            return settings.disposition(for: item) == .visible ? item.semanticBundleIdentifier : nil
+        })
+        if settings.oneDriveGuardianEnabled { allowed.insert("com.microsoft.OneDrive") }
+        if let ownBundleID = Bundle.main.bundleIdentifier { allowed.insert(ownBundleID) }
+        menuBarAgentVisibility.apply(allowedBundleIdentifiers: allowed) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .applied:
+                    Diagnostics.shared.append("MenuBarAgent restriction applied; allowedBundles=\(allowed.count); reason=\(reason)")
+                case .unavailable:
+                    Diagnostics.shared.append("MenuBarAgent restriction unavailable; reason=\(reason)")
+                case .failed(let message):
+                    Diagnostics.shared.append("MenuBarAgent restriction failed; error=\(message); reason=\(reason)")
+                }
+            }
+        }
     }
 
     private func addEvent(_ message: String) {

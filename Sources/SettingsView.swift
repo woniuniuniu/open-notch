@@ -610,7 +610,7 @@ private struct OverviewPane: View {
 
     var body: some View {
         PageScaffold(title: L("Overview"), subtitle: L("Menu bar at a glance")) {
-            if !model.hasAccessibilityPermission {
+            if !model.canManageMenuBar {
                 PermissionBanner()
             }
 
@@ -653,7 +653,7 @@ private struct OverviewPane: View {
                 ) {
                     Button(L("Reset Now")) { model.repairOneDriveNow() }
                         .systemGlassButton()
-                        .disabled(model.oneDriveItem == nil || !model.hasAccessibilityPermission)
+                        .disabled(model.oneDriveItem == nil || !model.canManageMenuBar)
                 }
             }
 
@@ -685,7 +685,7 @@ private struct MenuItemsPane: View {
         PageScaffold(title: L("Menu Bar Items"), subtitle: LF("%d manageable items", model.filteredItems.count)) {
             AIOrganizerSection()
 
-            if !model.hasAccessibilityPermission {
+            if !model.canManageMenuBar {
                 PermissionBanner()
             } else {
                 HStack(spacing: 9) {
@@ -884,7 +884,7 @@ private struct OneDrivePane: View {
 
     var body: some View {
         PageScaffold(title: "OneDrive", subtitle: L("Dynamic menu bar item guardian")) {
-            if !model.hasAccessibilityPermission {
+            if !model.canManageMenuBar {
                 PermissionBanner()
             }
 
@@ -912,7 +912,7 @@ private struct OneDrivePane: View {
                     ) {
                         Button(L("Reset Now")) { model.repairOneDriveNow() }
                             .systemGlassButton(prominent: true)
-                            .disabled(model.oneDriveItem == nil || !model.hasAccessibilityPermission)
+                            .disabled(model.oneDriveItem == nil || !model.canManageMenuBar)
                     }
 
                     if let oneDrive = model.oneDriveItem {
