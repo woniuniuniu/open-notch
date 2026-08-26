@@ -11,6 +11,11 @@ struct RawStatusWindow {
     let frame: CGRect
 }
 
+struct MenuBarScanReport {
+    let items: [MenuBarItem]
+    let diagnosticSummary: String
+}
+
 /// Read-only inventory for status windows and accessibility identities.
 /// This type never synthesizes or posts input events.
 enum MenuBarDiscovery {
@@ -18,7 +23,15 @@ enum MenuBarDiscovery {
         excluding excludedWindowIDs: Set<CGWindowID> = [],
         previousItems: [MenuBarItem] = []
     ) -> [MenuBarItem] {
-        let windows = statusWindows().filter { !excludedWindowIDs.contains($0.windowID) }
+        scanReport(excluding: excludedWindowIDs, previousItems: previousItems).items
+    }
+
+    static func scanReport(
+        excluding excludedWindowIDs: Set<CGWindowID> = [],
+        previousItems: [MenuBarItem] = []
+    ) -> MenuBarScanReport {
+        let inventory = statusWindowInventory()
+        let windows = inventory.windows.filter { !excludedWindowIDs.contains($0.windowID) }
         let semanticExtras = AccessibilityResolver.menuExtras()
         let previousByWindowID = Dictionary(
             previousItems.map { ($0.windowID, $0) },
@@ -96,7 +109,10 @@ enum MenuBarDiscovery {
             ))
         }
 
-        return deduplicated(result)
+        return MenuBarScanReport(
+            items: deduplicated(result),
+            diagnosticSummary: "\(inventory.diagnosticSummary); axExtras=\(semanticExtras.count); matchedWindows=\(windows.count)"
+        )
     }
 
     static func statusWindow(id: CGWindowID) -> RawStatusWindow? {
@@ -110,18 +126,7 @@ enum MenuBarDiscovery {
     }
 
     static func statusWindows() -> [RawStatusWindow] {
-        let list: [[String: Any]]
-        if WindowServerBridge.usesIndividualWindowEnumeration {
-            let bridged = WindowServerBridge.descriptions(
-                for: WindowServerBridge.individualMenuBarWindowIDs()
-            )
-            // Fail closed to the public inventory if a beta removes the private symbol.
-            list = bridged.isEmpty ? publicWindowDescriptions() : bridged
-        } else {
-            list = publicWindowDescriptions()
-        }
-
-        return rawStatusWindows(from: list)
+        statusWindowInventory().windows
     }
 
     static func publicStatusWindows() -> [RawStatusWindow] {
@@ -130,6 +135,48 @@ enum MenuBarDiscovery {
 
     private static func publicWindowDescriptions() -> [[String: Any]] {
         CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? []
+    }
+
+    private struct StatusWindowInventory {
+        let windows: [RawStatusWindow]
+        let diagnosticSummary: String
+    }
+
+    private static func statusWindowInventory() -> StatusWindowInventory {
+        let publicDescriptions: [[String: Any]]
+        let selectedDescriptions: [[String: Any]]
+        let source: String
+        let cgsSummary: String
+
+        if WindowServerBridge.usesIndividualWindowEnumeration {
+            let cgs = WindowServerBridge.inventory()
+            cgsSummary = cgs.diagnosticSummary
+            if cgs.descriptions.isEmpty {
+                publicDescriptions = publicWindowDescriptions()
+                selectedDescriptions = publicDescriptions
+                source = "CoreGraphics public fallback"
+            } else {
+                publicDescriptions = []
+                selectedDescriptions = cgs.descriptions
+                source = "WindowServer CGS"
+            }
+        } else {
+            publicDescriptions = publicWindowDescriptions()
+            selectedDescriptions = publicDescriptions
+            source = "CoreGraphics public inventory"
+            cgsSummary = "cgsRaw=not-requested; cgsEligible=not-requested; cgsDescriptions=not-requested"
+        }
+
+        let windows = rawStatusWindows(from: selectedDescriptions)
+        let publicStatusCount = publicDescriptions.reduce(into: 0) { count, info in
+            if (info[kCGWindowLayer as String] as? Int) == Int(CGWindowLevelForKey(.statusWindow)) {
+                count += 1
+            }
+        }
+        return StatusWindowInventory(
+            windows: windows,
+            diagnosticSummary: "requested=\(WindowServerBridge.enumerationName); effective=\(source); \(cgsSummary); publicDescriptions=\(publicDescriptions.count); publicStatus=\(publicStatusCount); usableStatus=\(windows.count)"
+        )
     }
 
     private static func rawStatusWindows(from list: [[String: Any]]) -> [RawStatusWindow] {

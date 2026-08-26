@@ -35,6 +35,16 @@ private func cgsGetWindowLevel(
 ) -> CGError
 
 enum WindowServerBridge {
+    struct Inventory {
+        let rawWindowCount: Int
+        let eligibleWindowIDs: [CGWindowID]
+        let descriptions: [[String: Any]]
+
+        var diagnosticSummary: String {
+            "cgsRaw=\(rawWindowCount); cgsEligible=\(eligibleWindowIDs.count); cgsDescriptions=\(descriptions.count)"
+        }
+    }
+
     static var usesIndividualWindowEnumeration: Bool {
         ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
     }
@@ -44,20 +54,32 @@ enum WindowServerBridge {
     }
 
     static func individualMenuBarWindowIDs() -> [CGWindowID] {
+        inventory().eligibleWindowIDs
+    }
+
+    static func inventory() -> Inventory {
         var count: Int32 = 0
         let connection = cgsMainConnectionID()
-        guard cgsGetWindowCount(connection, 0, &count) == .success, count > 0 else { return [] }
+        guard cgsGetWindowCount(connection, 0, &count) == .success, count > 0 else {
+            return Inventory(rawWindowCount: 0, eligibleWindowIDs: [], descriptions: [])
+        }
 
         var windowIDs = [CGWindowID](repeating: 0, count: Int(count))
         guard cgsGetProcessMenuBarWindowList(connection, 0, count, &windowIDs, &count) == .success else {
-            return []
+            return Inventory(rawWindowCount: 0, eligibleWindowIDs: [], descriptions: [])
         }
 
-        return Array(windowIDs.prefix(Int(count))).filter { windowID in
+        let rawWindowIDs = Array(windowIDs.prefix(Int(count)))
+        let eligibleWindowIDs = rawWindowIDs.filter { windowID in
             var level: CGWindowLevel = 0
             guard cgsGetWindowLevel(connection, windowID, &level) == .success else { return false }
             return level != CGWindowLevelForKey(.mainMenuWindow)
         }
+        return Inventory(
+            rawWindowCount: rawWindowIDs.count,
+            eligibleWindowIDs: eligibleWindowIDs,
+            descriptions: descriptions(for: eligibleWindowIDs)
+        )
     }
 
     static func descriptions(for windowIDs: [CGWindowID]) -> [[String: Any]] {
