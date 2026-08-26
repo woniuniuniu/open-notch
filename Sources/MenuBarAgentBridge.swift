@@ -101,7 +101,9 @@ enum MenuBarAgentBridge {
         guard let application = NSWorkspace.shared.runningApplications.first(where: {
             $0.bundleIdentifier == "com.apple.MenuBarAgent"
         }) else { return false }
-        if application.terminate() { return true }
+        // A graceful terminate can cascade through the menu-bar bootstrapper
+        // and take the client down with it on macOS 27. Signal only the
+        // WindowServer-owned agent; it will be relaunched by launchd.
         return Darwin.kill(application.processIdentifier, SIGTERM) == 0
     }
 
@@ -122,7 +124,7 @@ enum MenuBarAgentBridge {
                 semanticIdentifier: key, rawTitle: itemID, displayName: name,
                 symbolName: symbolName(for: bundleID, itemID: itemID),
                 frame: CGRect(x: position, y: 0, width: 1, height: 24),
-                isProtected: bundleID == Bundle.main.bundleIdentifier
+                isProtected: bundleID == Bundle.main.bundleIdentifier || bundleID.hasPrefix("com.apple.")
             )
         }
         if key.hasPrefix("module:") {

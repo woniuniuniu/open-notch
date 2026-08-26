@@ -17,8 +17,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var aiRecommendationMessage: String?
     @Published private(set) var aiRequestPhase: AIRequestPhase?
     @Published var selectedAIPlanID: String?
-    @Published var selectedPane: SettingsPane? = .overview
+    @Published var selectedPane: SettingsPane? = .overview {
+        didSet { refreshMenuItemSections() }
+    }
     @Published var searchText = ""
+    private var sectionDispositions = [String: ItemDisposition]()
 
     let settings = SettingsStore.shared
 
@@ -100,15 +103,27 @@ final class AppModel: ObservableObject {
     }
 
     var filteredVisibleItems: [MenuBarItem] {
-        filteredItems.filter { disposition(for: $0) == .visible && $0.hostPID != 0 }
+        filteredItems.filter { sectionDisposition(for: $0) == .visible && $0.hostPID != 0 }
     }
 
     var filteredHiddenItems: [MenuBarItem] {
-        filteredItems.filter { disposition(for: $0) == .hidden }
+        filteredItems.filter { sectionDisposition(for: $0) == .hidden }
     }
 
     var filteredInactiveItems: [MenuBarItem] {
-        filteredItems.filter { disposition(for: $0) == .visible && $0.hostPID == 0 }
+        filteredItems.filter { sectionDisposition(for: $0) == .visible && $0.hostPID == 0 }
+    }
+
+    private func sectionDisposition(for item: MenuBarItem) -> ItemDisposition {
+        sectionDispositions[item.id] ?? disposition(for: item)
+    }
+
+    /// Refresh the visible/hidden grouping at a deliberate UI boundary. A
+    /// toggle changes policy immediately, but the row stays in place until
+    /// the user changes panes, rescans, or reopens settings.
+    func refreshMenuItemSections() {
+        sectionDispositions = Dictionary(uniqueKeysWithValues: items.map { ($0.id, disposition(for: $0)) })
+        objectWillChange.send()
     }
 
     func start(openSettings: @escaping () -> Void) {
@@ -130,6 +145,7 @@ final class AppModel: ObservableObject {
         statusBar.onExportDebug = { [weak self] in self?.exportDebugReport() }
         self.statusBar = statusBar
         restorePersistedWindowBindings()
+        refreshMenuItemSections()
         updateStatusBar()
 
         configureObservers()
@@ -354,6 +370,7 @@ final class AppModel: ObservableObject {
                         return lhs.frame.minX < rhs.frame.minX
                     }
                 }
+                self.refreshMenuItemSections()
                 self.updateActualDispositions()
                 self.settings.remember(scanned)
                 self.applyMenuBarAgentVisibility(reason: reason)
