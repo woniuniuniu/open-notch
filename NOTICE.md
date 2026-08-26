@@ -22,6 +22,23 @@ applicable to the derived portion. Redistributors and derivative works must
 preserve this attribution, mark their modifications and dates, and provide the
 corresponding source under the GPL-3.0 terms.
 
+## Ice and Thaw-derived WindowServer compatibility
+
+The experimental macOS 27 menu bar window enumeration bridge is adapted from
+the WindowServer bridging and enumeration techniques used by Ice and Thaw:
+
+- Ice repository: https://github.com/jordanbaird/Ice
+- Ice copyright: Copyright (C) 2023-2025 Jordan Baird
+- Thaw repository: https://github.com/thaw-app/Thaw
+- Thaw copyright: Copyright (C) 2026 Toni Forster and Thaw contributors
+- License: GNU General Public License v3.0
+- Local derivative: `Sources/WindowServerBridge.swift`
+
+The bridge was adapted for Open Notch in 2026 and is distributed under
+GPL-3.0-only. It uses undocumented WindowServer symbols and is provided as an
+experimental compatibility path; Apple may change these symbols during macOS
+beta releases.
+
 ## Open Notch work
 
 The OneDrive semantic-to-host-window matching, discovery heuristics, layout

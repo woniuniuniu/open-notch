@@ -21,11 +21,15 @@ final class AppModel: ObservableObject {
     private var timer: Timer?
     private var observers = [NSObjectProtocol]()
     private var isMoving = false
+    private var pendingRefresh: (reason: String, reconcile: Bool)?
     private var itemsByWindowID = [CGWindowID: MenuBarItem]()
+    // Computed once per discovery pass; never query CoreGraphics from a SwiftUI row.
+    private var actualDispositions = [String: ItemDisposition]()
     private var identityRebindInProgress = false
     private var identityRebindShouldRecollapse = false
     private var lastIdentityRebind: Date?
     private var lastMoveByItem = [String: Date]()
+    private var failedMoveUntil = [String: Date]()
     private var layoutReconciler = LayoutReconciler()
     private var openSettingsAction: (() -> Void)?
 
@@ -35,11 +39,11 @@ final class AppModel: ObservableObject {
     var oneDriveItem: MenuBarItem? { items.first(where: \.isOneDrive) }
 
     var visibleItems: [MenuBarItem] {
-        items.filter { settings.disposition(for: $0) == .visible }
+        items.filter { disposition(for: $0) == .visible }
     }
 
     var hiddenItems: [MenuBarItem] {
-        items.filter { settings.disposition(for: $0) == .hidden }
+        items.filter { disposition(for: $0) == .hidden }
     }
 
     var filteredItems: [MenuBarItem] {
@@ -53,6 +57,10 @@ final class AppModel: ObservableObject {
         openSettingsAction = openSettings
         hasAccessibilityPermission = AccessibilityResolver.isTrusted()
         launchAtLogin = SMAppService.mainApp.status == .enabled
+        Diagnostics.shared.append("App started; macOS=\(ProcessInfo.processInfo.operatingSystemVersionString); accessibility=\(hasAccessibilityPermission); enumeration=\(WindowServerBridge.enumerationName)")
+        // Expansion is a temporary preview, not a preference. Always start with
+        // hidden items actually offscreen so the UI matches the menu bar.
+        settings.isExpanded = false
 
         let statusBar = StatusBarController()
         statusBar.onToggle = { [weak self] in self?.toggleExpanded() }
@@ -60,6 +68,7 @@ final class AppModel: ObservableObject {
         statusBar.onRefresh = { [weak self] in self?.refresh(reason: L("Manual scan"), reconcile: true) }
         statusBar.onToggleGuardian = { [weak self] in self?.toggleGuardian() }
         statusBar.onRestart = { [weak self] in self?.restartApplication() }
+        statusBar.onExportDebug = { [weak self] in self?.exportDebugReport() }
         self.statusBar = statusBar
         restorePersistedWindowBindings()
         updateStatusBar()
@@ -117,12 +126,73 @@ final class AppModel: ObservableObject {
                 NSApp.terminate(nil)
             }
         } catch {
+            Diagnostics.shared.append("Restart failed; error=\(error.localizedDescription)")
             addEvent(LF("Restart failed: %@", error.localizedDescription))
         }
     }
 
+    func exportDebugReport() {
+        guard let url = Diagnostics.shared.exportReport(summary: diagnosticSummary()) else {
+            addEvent(L("Debug log export failed"))
+            return
+        }
+        addEvent(L("Debug log exported to Desktop"))
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    func diagnosticSummary() -> String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unknown"
+#if arch(arm64)
+        let architecture = "arm64"
+#elseif arch(x86_64)
+        let architecture = "x86_64"
+#else
+        let architecture = "unknown"
+#endif
+        let boundaryID = statusBar?.boundaryWindowID.map(String.init) ?? "nil"
+        let toggleID = statusBar?.toggleWindowID.map(String.init) ?? "nil"
+        let scanDate = lastScanDate.map { ISO8601DateFormatter().string(from: $0) } ?? "never"
+        let itemLines = items.map {
+            "- \($0.displayName) | id=\($0.id) | window=\($0.windowID) | pid=\($0.hostPID) | " +
+            "owner=\($0.hostBundleIdentifier) | semantic=\($0.semanticBundleIdentifier) | " +
+            "actual=\(disposition(for: $0).rawValue) | wanted=\(settings.disposition(for: $0).rawValue) | " +
+            "frame=\(NSStringFromRect($0.frame))"
+        }.joined(separator: "\n")
+        return """
+        App: Open Notch \(version) (\(build))
+        macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)
+        Architecture: \(architecture)
+        Enumeration: \(WindowServerBridge.enumerationName)
+        Accessibility: \(hasAccessibilityPermission)
+        Expanded: \(settings.isExpanded)
+        Continuous monitor: \(settings.continuousMonitorEnabled)
+        OneDrive guardian: \(settings.oneDriveGuardianEnabled)
+        OneDrive running: \(isOneDriveRunning)
+        Item count: \(items.count)
+        Visible count: \(visibleItems.count)
+        Hidden count: \(hiddenItems.count)
+        Boundary window ID: \(boundaryID)
+        Toggle window ID: \(toggleID)
+        Last scan: \(scanDate)
+        Guardian events: \(guardianEvents.map(\.message).joined(separator: " | "))
+
+        Items
+        -----
+        \(itemLines.isEmpty ? "(none)" : itemLines)
+        """
+    }
+
     func refresh(reason: String = L("Scan"), reconcile: Bool = false) {
-        guard !isScanning else { return }
+        guard !isScanning else {
+            // Coalesce bursts from timers, workspace notifications, and user actions.
+            if pendingRefresh == nil || reconcile {
+                pendingRefresh = (reason, reconcile)
+            }
+            Diagnostics.shared.append("Scan coalesced; reason=\(reason); reconcile=\(reconcile)")
+            return
+        }
+        Diagnostics.shared.append("Scan started; reason=\(reason); reconcile=\(reconcile)")
         isScanning = true
         let isTrusted = AccessibilityResolver.isTrusted()
         if hasAccessibilityPermission != isTrusted {
@@ -144,9 +214,11 @@ final class AppModel: ObservableObject {
                     if lhs.isOneDrive != rhs.isOneDrive { return lhs.isOneDrive }
                     return lhs.frame.minX < rhs.frame.minX
                 }
+                self.updateActualDispositions()
                 self.settings.remember(scanned)
                 self.lastScanDate = .now
                 self.isScanning = false
+                Diagnostics.shared.append("Scan finished; items=\(scanned.count); visible=\(self.visibleItems.count); hidden=\(self.hiddenItems.count); accessibility=\(self.hasAccessibilityPermission)")
                 self.objectWillChange.send()
 
                 if self.identityRebindInProgress {
@@ -154,11 +226,21 @@ final class AppModel: ObservableObject {
                     return
                 }
                 if reconcile { self.reconcile(reason: reason) }
+                self.runPendingRefreshIfNeeded()
             }
         }
     }
 
+    private func runPendingRefreshIfNeeded() {
+        guard let pendingRefresh else { return }
+        self.pendingRefresh = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.refresh(reason: pendingRefresh.reason, reconcile: pendingRefresh.reconcile)
+        }
+    }
+
     func setDisposition(_ disposition: ItemDisposition, for item: MenuBarItem) {
+        Diagnostics.shared.append("User disposition; item=\(item.displayName); id=\(item.id); window=\(item.windowID); hostPID=\(item.hostPID); target=\(disposition.rawValue)")
         settings.setDisposition(disposition, for: item.id)
         layoutReconciler.reset(item.id)
         DispatchQueue.main.async { [weak self] in self?.objectWillChange.send() }
@@ -172,7 +254,31 @@ final class AppModel: ObservableObject {
     }
 
     func disposition(for item: MenuBarItem) -> ItemDisposition {
-        settings.disposition(for: item)
+        actualDispositions[item.id] ?? settings.disposition(for: item)
+    }
+
+    private func updateActualDispositions() {
+        guard let boundaryWindowID = statusBar?.boundaryWindowID,
+              let boundary = MenuBarDiscovery.statusWindow(id: boundaryWindowID)
+        else {
+            actualDispositions = [:]
+            return
+        }
+        actualDispositions = Dictionary(uniqueKeysWithValues: items.map { item in
+            let disposition: ItemDisposition = LayoutReconciler.isInSection(
+                item.frame,
+                disposition: .hidden,
+                boundary: boundary.frame
+            ) ? .hidden : .visible
+            return (item.id, disposition)
+        })
+    }
+
+    func setDockVisibility(_ visible: Bool) {
+        settings.showInDock = visible
+        NSApp.setActivationPolicy(visible ? .regular : .accessory)
+        if visible { NSApp.activate(ignoringOtherApps: true) }
+        objectWillChange.send()
     }
 
     func toggleExpanded() {
@@ -244,6 +350,14 @@ final class AppModel: ObservableObject {
 
     private func reconcile(reason: String) {
         guard settings.continuousMonitorEnabled, !isMoving else { return }
+        // Never run automatic menu bar moves while the settings UI is active.
+        // The user may be clicking or moving the pointer inside Open Notch;
+        // explicit row changes call move(... force: true) directly and remain
+        // responsive, while background reconciliation resumes after focus leaves.
+        guard !NSApp.isActive else {
+            Diagnostics.shared.append("Automatic reconcile paused while settings are active; reason=\(reason)")
+            return
+        }
         guard let boundaryWindowID = statusBar?.boundaryWindowID,
               let boundary = MenuBarDiscovery.statusWindow(id: boundaryWindowID)
         else { return }
@@ -289,21 +403,33 @@ final class AppModel: ObservableObject {
         force: Bool = false,
         collapseAfterSuccess: Bool = false
     ) {
-        guard !isMoving, hasAccessibilityPermission else { return }
-        guard force || canMove(item.id) else { return }
+        guard !isMoving, hasAccessibilityPermission else {
+            Diagnostics.shared.append("Move skipped; item=\(item.displayName); alreadyMoving=\(isMoving); accessibility=\(hasAccessibilityPermission)")
+            return
+        }
+        guard force || canMove(item.id) else {
+            Diagnostics.shared.append("Move throttled; item=\(item.displayName)")
+            return
+        }
         guard let boundaryWindowID = statusBar?.boundaryWindowID,
               let boundary = MenuBarDiscovery.statusWindow(id: boundaryWindowID)
-        else { return }
+        else {
+            Diagnostics.shared.append("Move failed before start; item=\(item.displayName); boundary unavailable")
+            return
+        }
 
         if LayoutReconciler.isInSection(item.frame, disposition: disposition, boundary: boundary.frame) {
             if collapseAfterSuccess { collapseHiddenSection() }
             if item.isOneDrive, force {
                 addEvent(L("OneDrive is already pinned"))
             }
+            Diagnostics.shared.append("Move unnecessary; item=\(item.displayName); already=\(disposition.rawValue)")
             return
         }
 
         isMoving = true
+        let moveStartedAt = Date.now
+        Diagnostics.shared.append("Move started; item=\(item.displayName); window=\(item.windowID); pid=\(item.hostPID); target=\(disposition.rawValue); reason=\(reason)")
         lastMoveByItem[item.id] = .now
         let excludedWindowIDs = statusBar?.excludedWindowIDs ?? []
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -316,9 +442,19 @@ final class AppModel: ObservableObject {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.isMoving = false
+                let resultName: String
+                switch result {
+                case .moved: resultName = "moved"
+                case .deferredForUserInput: resultName = "deferredForUserInput"
+                case .failed: resultName = "failed"
+                }
+                Diagnostics.shared.append("Move finished; item=\(item.displayName); result=\(resultName); elapsed=\(String(format: "%.3f", Date.now.timeIntervalSince(moveStartedAt)))s")
                 if result.succeeded, item.isOneDrive {
                     self.settings.repairCount += 1
                     self.addEvent(LF("OneDrive automatically restored · %@", reason))
+                }
+                if result.succeeded {
+                    self.failedMoveUntil[item.id] = nil
                 }
                 if result.succeeded, collapseAfterSuccess {
                     self.collapseHiddenSection()
@@ -327,6 +463,10 @@ final class AppModel: ObservableObject {
                     self.lastMoveByItem[item.id] = nil
                     self.layoutReconciler.reset(item.id)
                 } else if case .failed = result {
+                    // Do not let the five-second monitor repeatedly trigger a
+                    // synthetic drag for an item that the current OS refuses
+                    // to move. An explicit user click still bypasses this.
+                    self.failedMoveUntil[item.id] = .now.addingTimeInterval(30)
                     self.addEvent(LF("Could not move %@. Check Accessibility permission.", item.displayName))
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
@@ -337,6 +477,7 @@ final class AppModel: ObservableObject {
     }
 
     private func canMove(_ id: String) -> Bool {
+        if let retryDate = failedMoveUntil[id], retryDate > .now { return false }
         guard let lastMove = lastMoveByItem[id] else { return true }
         return Date.now.timeIntervalSince(lastMove) > 4
     }
@@ -357,6 +498,7 @@ final class AppModel: ObservableObject {
 
     private func beginIdentityRebind(reason: String) {
         guard hasAccessibilityPermission, !identityRebindInProgress else { return }
+        Diagnostics.shared.append("Identity rebind started; reason=\(reason)")
         identityRebindInProgress = true
         identityRebindShouldRecollapse = !settings.isExpanded
         lastIdentityRebind = .now
@@ -370,6 +512,7 @@ final class AppModel: ObservableObject {
 
     private func finishIdentityRebind() {
         guard identityRebindInProgress else { return }
+        Diagnostics.shared.append("Identity rebind finished; items=\(items.count)")
         identityRebindInProgress = false
         if identityRebindShouldRecollapse {
             statusBar?.setExpanded(false)
@@ -416,10 +559,10 @@ final class AppModel: ObservableObject {
         timer?.invalidate()
         timer = nil
         guard settings.continuousMonitorEnabled else { return }
-        timer = .scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
+        timer = .scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh(reason: L("Continuous monitoring"), reconcile: true) }
         }
-        timer?.tolerance = 0.4
+        timer?.tolerance = 1.0
     }
 
     private func configureObservers() {

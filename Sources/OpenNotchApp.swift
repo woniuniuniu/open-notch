@@ -8,7 +8,7 @@ enum OpenNotchApplication {
         let application = NSApplication.shared
         let delegate = AppDelegate()
         application.delegate = delegate
-        application.setActivationPolicy(.accessory)
+        application.setActivationPolicy(SettingsStore.shared.showInDock ? .regular : .accessory)
         withExtendedLifetime(delegate) {
             application.run()
         }
@@ -34,11 +34,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let view = SettingsRootView().environmentObject(AppModel.shared)
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 470, height: 650),
-                styleMask: [.titled, .closable, .fullSizeContentView],
+                styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                 backing: .buffered,
                 defer: false
             )
             window.title = L("App Name")
+            window.identifier = NSUserInterfaceItemIdentifier("OpenNotch.Settings")
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
             window.titlebarSeparatorStyle = .none
@@ -50,8 +51,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.hasShadow = true
             window.isMovableByWindowBackground = true
             window.minSize = NSSize(width: 470, height: 650)
-            window.maxSize = NSSize(width: 470, height: 650)
             window.contentView = NSHostingView(rootView: view)
+            window.standardWindowButton(.closeButton)?.isHidden = true
+            window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+            window.standardWindowButton(.zoomButton)?.isHidden = true
             window.center()
             settingsWindow = window
         }

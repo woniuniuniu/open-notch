@@ -12,6 +12,7 @@
 "Battery" = "电池";
 "Bundle Identifier" = "应用标识";
 "Clock" = "时钟";
+"Clear Search" = "清除筛选";
 "Collapse" = "收起";
 "Collapse Hidden Items" = "收起隐藏图标";
 "Collapsed" = "已收起";
@@ -27,6 +28,7 @@
 "Expand hidden section" = "展开隐藏区";
 "Expanded" = "已展开";
 "Find OneDrive" = "查找 OneDrive";
+"Filter scanned items" = "筛选已扫描图标";
 "First upgrade: identifying menu bar items" = "首次升级，正在绑定菜单栏图标";
 "Focus" = "专注模式";
 "General" = "通用";
@@ -55,6 +57,7 @@
 "Menu Bar Items" = "菜单栏图标";
 "Minimum System" = "最低系统";
 "No manageable items" = "没有可管理的图标";
+"No matching items" = "没有匹配的图标";
 "Not Authorized" = "未授权";
 "Not Found" = "未发现";
 "Off" = "关闭";
@@ -95,6 +98,7 @@
 "Startup scan" = "启动扫描";
 "Status" = "状态";
 "Status Menu Title" = "若栏";
+"System" = "跟随系统";
 "System state changed" = "系统状态变化";
 "This program comes with absolutely no warranty. You may redistribute it under GNU GPL v3." = "本程序不提供任何担保。你可以按照 GNU GPL v3 的条款重新分发。";
 "Unknown" = "未知";
@@ -104,9 +108,18 @@
 "View License" = "查看许可证";
 "View Notices" = "查看声明";
 "Visible" = "显示";
+"Show in Dock" = "显示在 Dock";
+"Dock and menu bar" = "Dock 与菜单栏";
+"Menu bar only" = "仅显示在菜单栏";
 "App Name" = "若栏";
 "Credits" = "鸣谢";
 "Developer" = "开发者";
 "Chinese localization contributor" = "中文本地化贡献者";
 "Xiaohongshu @Snail's Tech Notes" = "小红书@蜗牛的科技笔记";
 "%d manageable items" = "%d 个可管理图标";
+"Diagnostics" = "诊断";
+"Debug report" = "Debug 报告";
+"Export Debug Log" = "导出 Debug 日志";
+"Save compatibility details and recent activity to Desktop" = "把兼容性信息和最近活动保存到桌面";
+"Debug log exported to Desktop" = "Debug 日志已导出到桌面";
+"Debug log export failed" = "Debug 日志导出失败";

@@ -18,6 +18,7 @@ final class StatusBarController: NSObject {
     var onRefresh: (() -> Void)?
     var onToggleGuardian: (() -> Void)?
     var onRestart: (() -> Void)?
+    var onExportDebug: (() -> Void)?
 
     override init() {
         let defaults = UserDefaults.standard
@@ -123,6 +124,12 @@ final class StatusBarController: NSObject {
         settingsItem.isEnabled = true
         menu.addItem(settingsItem)
 
+        let debugItem = NSMenuItem(title: L("Export Debug Log"), action: #selector(exportDebug), keyEquivalent: "")
+        debugItem.target = self
+        debugItem.image = NSImage(systemSymbolName: "ladybug", accessibilityDescription: nil)
+        debugItem.isEnabled = true
+        menu.addItem(debugItem)
+
         let restartItem = NSMenuItem(title: L("Restart Open Notch"), action: #selector(restart), keyEquivalent: "")
         restartItem.target = self
         restartItem.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
@@ -203,6 +210,7 @@ final class StatusBarController: NSObject {
     @objc private func toggleGuardianFromMenu() { onToggleGuardian?() }
     @objc private func refreshFromMenu() { onRefresh?() }
     @objc private func openSettingsFromMenu() { onOpenSettings?() }
+    @objc private func exportDebug() { onExportDebug?() }
     @objc private func restart() { onRestart?() }
     @objc private func quit() { NSApp.terminate(nil) }
 }
