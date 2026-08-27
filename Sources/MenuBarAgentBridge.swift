@@ -34,14 +34,13 @@ enum MenuBarAgentBridge {
     }
 
     /// Updates the preferred order without restarting MenuBarAgent. macOS 27
-    /// consumes the preference during its next natural layout refresh; forcing
-    /// that refresh by terminating the agent makes the entire menu bar blink.
+    /// treats these values as sortable slots. Reassigning existing slots is
+    /// substantially more reliable than inventing fractional values between
+    /// neighbors, which MenuBarAgent may normalize back to its previous order.
     @MainActor
     static func moveItem(_ sourceKey: String, adjacentTo targetKey: String, placeAfterTarget: Bool) -> Bool {
         guard
             isAvailable,
-            sourceKey.hasPrefix("status:"),
-            targetKey.hasPrefix("status:"),
             sourceKey != targetKey,
             var current = positions(),
             current[sourceKey] != nil,
@@ -52,32 +51,22 @@ enum MenuBarAgentBridge {
             let rhs = current[$1] ?? 0
             return lhs == rhs ? $0 < $1 : lhs < rhs
         }
+        let existingSlots = orderedKeys.compactMap { current[$0] }.sorted()
         orderedKeys.removeAll { $0 == sourceKey }
         guard let targetIndex = orderedKeys.firstIndex(of: targetKey) else { return false }
         let insertionIndex = targetIndex + (placeAfterTarget ? 1 : 0)
         orderedKeys.insert(sourceKey, at: insertionIndex)
-        let lower = insertionIndex > 0 ? current[orderedKeys[insertionIndex - 1]] : nil
-        let upper = insertionIndex + 1 < orderedKeys.count ? current[orderedKeys[insertionIndex + 1]] : nil
-        let newPosition: Double
-        switch (lower, upper) {
-        case let (lower?, upper?) where upper > lower:
-            newPosition = lower + ((upper - lower) / 2)
-        case let (lower?, upper?):
-            newPosition = placeAfterTarget ? max(lower, upper) + 0.125 : min(lower, upper) - 0.125
-        case let (nil, upper?):
-            newPosition = upper - 16
-        case let (lower?, nil):
-            newPosition = lower + 16
-        default:
-            return false
+
+        guard orderedKeys.count == existingSlots.count else { return false }
+        for (index, key) in orderedKeys.enumerated() {
+            current[key] = existingSlots[index]
         }
-        current[sourceKey] = newPosition
         let suite = UserDefaults(suiteName: domain)
         suite?.set(current, forKey: positionsKey)
         let synchronized = suite?.synchronize() ?? false
         Diagnostics.shared.append(
             "MenuBarAgent reorder; source=\(sourceKey); target=\(targetKey); " +
-            "after=\(placeAfterTarget); position=\(newPosition); synchronized=\(synchronized)"
+            "after=\(placeAfterTarget); slot=\(current[sourceKey] ?? -1); synchronized=\(synchronized)"
         )
         return synchronized
     }

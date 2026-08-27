@@ -1,6 +1,13 @@
 import AppKit
 import SwiftUI
 
+private final class SettingsHostingView<Content: View>: NSHostingView<Content> {
+    @available(macOS 27.0, *)
+    override var cornerConfiguration: NSViewCornerConfiguration? {
+        .uniformCorners(radius: .containerConcentric(8))
+    }
+}
+
 @main
 enum OpenNotchApplication {
     @MainActor
@@ -68,11 +75,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.hasShadow = true
             window.isMovableByWindowBackground = true
             window.minSize = NSSize(width: 470, height: 650)
-            window.contentView = NSHostingView(rootView: view)
-            window.contentView?.wantsLayer = true
-            window.contentView?.layer?.cornerRadius = 30
-            window.contentView?.layer?.cornerCurve = .continuous
-            window.contentView?.layer?.masksToBounds = true
+            // Let macOS 27 own the standard window radius. A fixed CALayer
+            // radius cannot follow the system's style-dependent window shape.
+            // The new concentric configuration adapts the hosted content to
+            // the effective system window corners.
+            window.contentView = SettingsHostingView(rootView: view)
             window.standardWindowButton(.closeButton)?.isHidden = true
             window.standardWindowButton(.miniaturizeButton)?.isHidden = true
             window.standardWindowButton(.zoomButton)?.isHidden = true

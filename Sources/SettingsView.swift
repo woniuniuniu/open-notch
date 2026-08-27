@@ -5,7 +5,6 @@ import SwiftUI
 private enum OpenNotchTheme {
     // macOS 27 uses noticeably softer, more continuous container geometry.
     // Keep the hierarchy small and consistent across every settings pane.
-    static let windowCornerRadius: CGFloat = 30
     static let panelCornerRadius: CGFloat = 18
     static let controlCornerRadius: CGFloat = 12
     static let compactCornerRadius: CGFloat = 8
@@ -37,7 +36,6 @@ struct SettingsRootView: View {
     var body: some View {
         ZStack {
             WindowVisualEffect()
-                .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.windowCornerRadius, style: .continuous))
 
             VStack(spacing: 0) {
                 CompactTopBar(showMenu: $showSettingsMenu)
@@ -89,7 +87,6 @@ private struct WindowVisualEffect: NSViewRepresentable {
         view.blendingMode = .behindWindow
         view.state = .active
         view.wantsLayer = true
-        view.layer?.cornerRadius = OpenNotchTheme.windowCornerRadius
         view.layer?.borderWidth = 1
         view.layer?.borderColor = NSColor.white.withAlphaComponent(0.16).cgColor
         view.layer?.shadowColor = NSColor.black.withAlphaComponent(0.35).cgColor
