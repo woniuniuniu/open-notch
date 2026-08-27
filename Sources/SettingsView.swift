@@ -3,6 +3,12 @@ import ServiceManagement
 import SwiftUI
 
 private enum OpenNotchTheme {
+    // macOS 27 uses noticeably softer, more continuous container geometry.
+    // Keep the hierarchy small and consistent across every settings pane.
+    static let windowCornerRadius: CGFloat = 30
+    static let panelCornerRadius: CGFloat = 18
+    static let controlCornerRadius: CGFloat = 12
+    static let compactCornerRadius: CGFloat = 8
     static let blue = Color(red: 0.24, green: 0.63, blue: 0.96)
     static let cyan = Color(red: 0.20, green: 0.78, blue: 0.82)
     static let magenta = Color(red: 0.93, green: 0.23, blue: 0.70)
@@ -31,7 +37,7 @@ struct SettingsRootView: View {
     var body: some View {
         ZStack {
             WindowVisualEffect()
-                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.windowCornerRadius, style: .continuous))
 
             VStack(spacing: 0) {
                 CompactTopBar(showMenu: $showSettingsMenu)
@@ -83,7 +89,7 @@ private struct WindowVisualEffect: NSViewRepresentable {
         view.blendingMode = .behindWindow
         view.state = .active
         view.wantsLayer = true
-        view.layer?.cornerRadius = 22
+        view.layer?.cornerRadius = OpenNotchTheme.windowCornerRadius
         view.layer?.borderWidth = 1
         view.layer?.borderColor = NSColor.white.withAlphaComponent(0.16).cgColor
         view.layer?.shadowColor = NSColor.black.withAlphaComponent(0.35).cgColor
@@ -108,7 +114,7 @@ private struct CompactTopBar: View {
 
             Image(nsImage: NSApplication.shared.applicationIconImage)
                 .resizable().frame(width: 26, height: 26)
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.compactCornerRadius, style: .continuous))
 
             HStack(spacing: 2) {
                 topTab(L("Overview"), pane: .overview, icon: "sparkles")
@@ -176,8 +182,8 @@ private struct SettingsQuickMenu: View {
             .background(Color.clear)
         }
         .padding(8)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.white.opacity(0.16), lineWidth: 1) }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous).stroke(.white.opacity(0.16), lineWidth: 1) }
         .shadow(color: .black.opacity(0.24), radius: 20, y: 8)
         .frame(width: 190)
     }
@@ -192,7 +198,7 @@ private struct SettingsQuickMenu: View {
         .frame(width: 164, height: 34, alignment: .leading)
         .contentShape(Rectangle())
         .onHover { hoveredMenu = $0 ? pane.id : nil }
-        .background(hoveredMenu == pane.id ? Color.primary.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 7))
+        .background(hoveredMenu == pane.id ? Color.primary.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
     }
 }
 
@@ -298,10 +304,10 @@ private struct AppSidebar: View {
                         .frame(height: 36)
                         .background {
                             if model.selectedPane == pane {
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous)
                                     .fill(OpenNotchTheme.blue.opacity(colorScheme == .dark ? 0.20 : 0.13))
                                     .overlay {
-                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous)
                                             .stroke(OpenNotchTheme.blue.opacity(0.28), lineWidth: 1)
                                     }
                                     .matchedGeometryEffect(id: "sidebarSelection", in: selectionNamespace)
@@ -351,10 +357,10 @@ private struct SidebarStatus: View {
         .frame(height: 48)
         .background(OpenNotchTheme.panelFill(for: colorScheme))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous)
                 .stroke(OpenNotchTheme.hairline(for: colorScheme), lineWidth: 1)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous))
     }
 }
 
@@ -450,10 +456,10 @@ private struct GlassPanel<Content: View>: View {
         }
         .background(OpenNotchTheme.panelFill(for: colorScheme))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous)
                 .stroke(OpenNotchTheme.hairline(for: colorScheme), lineWidth: 1)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous))
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.18 : 0.07), radius: 14, y: 7)
     }
 }
@@ -610,7 +616,7 @@ private struct OverviewPane: View {
 
     var body: some View {
         PageScaffold(title: L("Overview"), subtitle: L("Menu bar at a glance")) {
-            if !model.hasAccessibilityPermission {
+            if !model.canManageMenuBar {
                 PermissionBanner()
             }
 
@@ -653,7 +659,7 @@ private struct OverviewPane: View {
                 ) {
                     Button(L("Reset Now")) { model.repairOneDriveNow() }
                         .systemGlassButton()
-                        .disabled(model.oneDriveItem == nil || !model.hasAccessibilityPermission)
+                        .disabled(model.oneDriveItem == nil || !model.canManageMenuBar)
                 }
             }
 
@@ -685,7 +691,7 @@ private struct MenuItemsPane: View {
         PageScaffold(title: L("Menu Bar Items"), subtitle: LF("%d manageable items", model.filteredItems.count)) {
             AIOrganizerSection()
 
-            if !model.hasAccessibilityPermission {
+            if !model.canManageMenuBar {
                 PermissionBanner()
             } else {
                 HStack(spacing: 9) {
@@ -699,10 +705,10 @@ private struct MenuItemsPane: View {
                     .frame(height: 34)
                     .background(.thinMaterial)
                     .overlay {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous)
                             .stroke(.separator.opacity(0.55), lineWidth: 1)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
 
                     Button {
                         model.refresh(reason: L("Manual scan"), reconcile: false)
@@ -741,14 +747,80 @@ private struct MenuItemsPane: View {
                         .frame(maxWidth: .infinity, minHeight: 180)
                     }
                 } else {
-                    GlassPanel(title: L("Manual Management"), systemImage: "slider.horizontal.3", accent: OpenNotchTheme.blue) {
-                        LazyVStack(spacing: 0) {
-                            ForEach(Array(model.filteredItems.enumerated()), id: \.element.id) { index, item in
-                                MenuItemRow(item: item)
-                                if index < model.filteredItems.count - 1 {
-                                    Divider()
-                                        .opacity(0.55)
+                    if !model.filteredVisibleItems.isEmpty {
+                        GlassPanel(
+                            title: LF("Visible Items (%d)", model.filteredVisibleItems.count),
+                            systemImage: "eye.fill",
+                            accent: OpenNotchTheme.cyan
+                        ) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(L("Drag the handle to reorder visible menu bar items."))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                LazyVStack(spacing: 0) {
+                                    ForEach(Array(model.filteredVisibleItems.enumerated()), id: \.element.id) { index, item in
+                                        MenuItemRow(item: item, allowsReordering: true)
+                                        if index < model.filteredVisibleItems.count - 1 {
+                                            Divider().opacity(0.55)
+                                        }
+                                    }
                                 }
+                            }
+                        }
+                    }
+
+                    if !model.filteredHiddenItems.isEmpty {
+                        GlassPanel(
+                            title: LF("Hidden Items (%d)", model.filteredHiddenItems.count),
+                            systemImage: "eye.slash.fill",
+                            accent: Color.gray
+                        ) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(L("Hidden items keep their previous positions and do not participate in sorting."))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                LazyVStack(spacing: 0) {
+                                    ForEach(Array(model.filteredHiddenItems.enumerated()), id: \.element.id) { index, item in
+                                        MenuItemRow(item: item, allowsReordering: false)
+                                        if index < model.filteredHiddenItems.count - 1 {
+                                            Divider().opacity(0.55)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if !model.filteredInactiveItems.isEmpty {
+                        GlassPanel(
+                            title: LF("Not Running (%d)", model.filteredInactiveItems.count),
+                            systemImage: "moon.zzz.fill",
+                            accent: OpenNotchTheme.yellow
+                        ) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(L("These are saved historical items. They will return to the visible section when their apps run again."))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                LazyVStack(spacing: 0) {
+                                    ForEach(Array(model.filteredInactiveItems.enumerated()), id: \.element.id) { index, item in
+                                        MenuItemRow(item: item, allowsReordering: false)
+                                        if index < model.filteredInactiveItems.count - 1 {
+                                            Divider().opacity(0.55)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if model.filteredVisibleItems.isEmpty && !model.filteredHiddenItems.isEmpty {
+                        GlassPanel {
+                            HStack(spacing: 10) {
+                                Image(systemName: "info.circle")
+                                    .foregroundStyle(OpenNotchTheme.blue)
+                                Text(L("Show an item to return it to its previous position and make it sortable again."))
+                                    .font(.caption)
+                                Spacer()
                             }
                         }
                     }
@@ -763,10 +835,35 @@ private struct MenuItemRow: View {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var settings = SettingsStore.shared
     @State private var isHovering = false
+    @State private var isDropTargeted = false
     let item: MenuBarItem
+    let allowsReordering: Bool
 
     var body: some View {
         HStack(spacing: 11) {
+            if MenuBarAgentBridge.isAvailable && allowsReordering {
+                HStack(spacing: 0) {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 22, height: 40)
+                        .contentShape(Rectangle())
+                        .help(L("Drag to reorder"))
+                        .accessibilityLabel(L("Drag to reorder"))
+                        .draggable(item.id) {
+                            Label(item.displayName, systemImage: item.symbolName)
+                                .padding(8)
+                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
+                        }
+
+                    VStack(spacing: 0) {
+                        reorderButton("chevron.up", offset: -1, help: L("Move Up"))
+                        reorderButton("chevron.down", offset: 1, help: L("Move Down"))
+                    }
+                }
+                .frame(width: 42, height: 42)
+            }
+
             MenuItemIcon(item: item)
                 .frame(width: 28, height: 28)
 
@@ -797,16 +894,40 @@ private struct MenuItemRow: View {
             .disabled(item.isOneDrive && SettingsStore.shared.oneDriveGuardianEnabled)
         }
         .padding(.horizontal, 7)
-        .frame(height: 52)
-        .background(isHovering ? OpenNotchTheme.hoverFill(for: colorScheme) : .clear)
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .frame(height: 60)
+        .background((isHovering || isDropTargeted) ? OpenNotchTheme.hoverFill(for: colorScheme) : .clear)
+        .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
         .onHover { isHovering = $0 }
+        .dropDestination(for: String.self) { sourceIDs, _ in
+            guard MenuBarAgentBridge.isAvailable, allowsReordering, let sourceID = sourceIDs.first else {
+                return false
+            }
+            model.reorderMenuBarItem(sourceID: sourceID, targetID: item.id)
+            return true
+        } isTargeted: { targeted in
+            isDropTargeted = targeted
+        }
         .accessibilityElement(children: .contain)
     }
 
     private var secondaryText: String {
         settings.aiDescription(for: item.id, language: settings.language)
             ?? (item.detail.isEmpty ? item.semanticBundleIdentifier : item.detail)
+    }
+
+    private func reorderButton(_ symbol: String, offset: Int, help: String) -> some View {
+        Button {
+            model.moveMenuBarItem(item.id, offset: offset)
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
     }
 }
 
@@ -821,7 +942,7 @@ private struct VisibilityControl: View {
             option(.visible, symbol: "eye.fill", tint: OpenNotchTheme.cyan)
             option(.hidden, symbol: "eye.slash.fill", tint: Color.gray)
         }
-        .padding(3)
+        .padding(4)
         .background(.black.opacity(0.13), in: Capsule())
         .overlay { Capsule().stroke(.white.opacity(0.08), lineWidth: 1) }
         .opacity(isEnabled ? 1 : 0.45)
@@ -836,9 +957,10 @@ private struct VisibilityControl: View {
             }
         } label: {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(selection == disposition ? Color.white : Color.secondary)
-                .frame(width: 32, height: 25)
+                .frame(width: 44, height: 34)
+                .contentShape(Rectangle())
                 .background {
                     if selection == disposition {
                         Capsule()
@@ -865,10 +987,9 @@ private struct MenuItemIcon: View {
                     .resizable()
                     .scaledToFit()
             } else if item.symbolName == "app.dashed" {
-                Image(nsImage: NSApplication.shared.applicationIconImage)
-                    .resizable()
-                    .scaledToFit()
-                    .opacity(0.65)
+                Image(systemName: "app.dashed")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.secondary)
             } else {
                 Image(systemName: item.symbolName)
                     .font(.system(size: 16, weight: .medium))
@@ -884,7 +1005,7 @@ private struct OneDrivePane: View {
 
     var body: some View {
         PageScaffold(title: "OneDrive", subtitle: L("Dynamic menu bar item guardian")) {
-            if !model.hasAccessibilityPermission {
+            if !model.canManageMenuBar {
                 PermissionBanner()
             }
 
@@ -912,7 +1033,7 @@ private struct OneDrivePane: View {
                     ) {
                         Button(L("Reset Now")) { model.repairOneDriveNow() }
                             .systemGlassButton(prominent: true)
-                            .disabled(model.oneDriveItem == nil || !model.hasAccessibilityPermission)
+                            .disabled(model.oneDriveItem == nil || !model.canManageMenuBar)
                     }
 
                     if let oneDrive = model.oneDriveItem {
@@ -1095,7 +1216,7 @@ private struct AIRequestProgressView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
     }
 }
 
@@ -1153,7 +1274,7 @@ private struct AIBeforeAfterPreview: View {
             }
         }
         .padding(9)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
     }
 }
 
@@ -1190,6 +1311,7 @@ private struct GeneralPane: View {
                         .labelsHidden()
                         .pickerStyle(.segmented)
                         .frame(width: 150)
+                        .padding(.trailing, 28)
                     }
                 }
             }

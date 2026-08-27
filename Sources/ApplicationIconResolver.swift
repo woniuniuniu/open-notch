@@ -5,7 +5,7 @@ import Foundation
 final class ApplicationIconResolver {
     static let shared = ApplicationIconResolver()
 
-    private var cache = [String: NSImage?]()
+    private var cache = [String: NSImage]()
 
     private init() {}
 
@@ -25,21 +25,32 @@ final class ApplicationIconResolver {
             !(bundleIdentifier.hasPrefix("com.apple.") && item.symbolName != "app.dashed")
         else { return nil }
 
-        if let cached = cache[bundleIdentifier] {
-            return cached
+        if let cached = cache[bundleIdentifier] { return cached }
+
+        // Menu-bar helpers often expose a different bundle identifier from
+        // their parent application. Resolve the concrete process first so
+        // helper items still receive the icon that is actually running.
+        let runningApplication = item.hostPID > 0
+            ? NSRunningApplication(processIdentifier: item.hostPID)
+            : nil
+        let application = runningApplication
+            ?? NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == bundleIdentifier }
+
+        let image: NSImage?
+        if let applicationIcon = application?.icon {
+            image = applicationIcon
+        } else if let applicationURL = application?.bundleURL
+            ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
+            image = NSWorkspace.shared.icon(forFile: applicationURL.path)
+        } else {
+            image = nil
         }
 
-        let applicationURL = NSWorkspace.shared.runningApplications
-            .first { $0.bundleIdentifier == bundleIdentifier }?
-            .bundleURL
-            ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
-
-        guard let applicationURL else {
-            cache[bundleIdentifier] = nil
+        guard let image else {
+            // Do not permanently cache a miss: an app may launch after the
+            // first discovery pass and become resolvable on the next refresh.
             return nil
         }
-
-        let image = NSWorkspace.shared.icon(forFile: applicationURL.path)
         let copy = image.copy() as? NSImage ?? image
         copy.isTemplate = false
         cache[bundleIdentifier] = copy
