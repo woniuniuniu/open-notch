@@ -277,11 +277,7 @@ enum MenuBarDiscovery {
     }
 
     private static func isProtected(semanticIdentifier: String, bundleIdentifier: String) -> Bool {
-        let protectedIdentifiers: Set<String> = [
-            "com.apple.menuextra.clock",
-            "com.apple.menuextra.controlcenter",
-        ]
-        return protectedIdentifiers.contains(semanticIdentifier) || bundleIdentifier == (Bundle.main.bundleIdentifier ?? "")
+        bundleIdentifier == (Bundle.main.bundleIdentifier ?? "")
     }
 
     private static func normalizedTitle(_ title: String) -> String {

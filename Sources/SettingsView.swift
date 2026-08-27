@@ -5,9 +5,9 @@ import SwiftUI
 private enum OpenNotchTheme {
     // macOS 27 uses noticeably softer, more continuous container geometry.
     // Keep the hierarchy small and consistent across every settings pane.
-    static let windowCornerRadius: CGFloat = 26
-    static let panelCornerRadius: CGFloat = 14
-    static let controlCornerRadius: CGFloat = 10
+    static let windowCornerRadius: CGFloat = 30
+    static let panelCornerRadius: CGFloat = 18
+    static let controlCornerRadius: CGFloat = 12
     static let compactCornerRadius: CGFloat = 8
     static let blue = Color(red: 0.24, green: 0.63, blue: 0.96)
     static let cyan = Color(red: 0.20, green: 0.78, blue: 0.82)
@@ -1311,7 +1311,7 @@ private struct GeneralPane: View {
                         .labelsHidden()
                         .pickerStyle(.segmented)
                         .frame(width: 150)
-                        .padding(.trailing, 10)
+                        .padding(.trailing, 28)
                     }
                 }
             }

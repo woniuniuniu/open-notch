@@ -134,7 +134,7 @@ enum MenuBarAgentBridge {
                 semanticIdentifier: key, rawTitle: module, displayName: names[module] ?? module,
                 symbolName: symbols[module] ?? "switch.2",
                 frame: CGRect(x: position, y: 0, width: 1, height: 24),
-                isProtected: ["AudioVideoModule", "BentoBox-0", "Clock"].contains(module)
+                isProtected: false
             )
         }
         return nil
@@ -176,7 +176,7 @@ final class MenuBarAgentVisibilityController {
     deinit { invalidate() }
 
     func apply(
-        allowedSystemItems: Set<String>,
+        allowedSystemItems: Set<Int>,
         allowedBundleIdentifiers: Set<String>,
         completion: @escaping (ApplyResult) -> Void
     ) {
@@ -195,7 +195,7 @@ final class MenuBarAgentVisibilityController {
             completion(.unavailable); return
         }
         let configured = unsafeBitCast(method_getImplementation(configMethod), to: ConfigIMP.self)(
-            configuration, configSelector, allowedSystemItems.sorted() as NSArray,
+            configuration, configSelector, allowedSystemItems.sorted().map(NSNumber.init(value:)) as NSArray,
             allowedBundleIdentifiers.sorted() as NSArray
         )
         guard let configured else { completion(.failed("configuration rejected")); return }

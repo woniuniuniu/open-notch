@@ -69,6 +69,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.isMovableByWindowBackground = true
             window.minSize = NSSize(width: 470, height: 650)
             window.contentView = NSHostingView(rootView: view)
+            window.contentView?.wantsLayer = true
+            window.contentView?.layer?.cornerRadius = 30
+            window.contentView?.layer?.cornerCurve = .continuous
+            window.contentView?.layer?.masksToBounds = true
             window.standardWindowButton(.closeButton)?.isHidden = true
             window.standardWindowButton(.miniaturizeButton)?.isHidden = true
             window.standardWindowButton(.zoomButton)?.isHidden = true

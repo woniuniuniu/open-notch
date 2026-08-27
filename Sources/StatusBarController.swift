@@ -12,6 +12,7 @@ final class StatusBarController: NSObject {
     private let boundaryItem: NSStatusItem
     private var boundaryWidthConstraint: NSLayoutConstraint?
     private var menu: NSMenu?
+    private var positionRefreshGeneration: UInt64 = 0
 
     var onToggle: (() -> Void)?
     var onOpenSettings: (() -> Void)?
@@ -68,6 +69,34 @@ final class StatusBarController: NSObject {
         // appearance selected for the settings window.
         toggleItem.button?.contentTintColor = nil
         toggleItem.button?.toolTip = L("App Name")
+    }
+
+    /// Ask MenuBarAgent to consume newly saved preferred positions without
+    /// restarting it or synthesizing pointer events. This compositor-preserving
+    /// status-item length nudge follows Thaw's GPL-3.0-only ControlItem approach.
+    func requestMenuBarPositionRefresh() {
+        positionRefreshGeneration &+= 1
+        let generation = positionRefreshGeneration
+        let baseline = toggleItem.length
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self, self.positionRefreshGeneration == generation else { return }
+            let renderedWidth = self.toggleItem.button?.bounds.width ?? 0
+            guard renderedWidth > 0 else { return }
+            let temporaryLength: CGFloat
+            if baseline == NSStatusItem.variableLength {
+                temporaryLength = max(1, renderedWidth)
+            } else if abs(baseline - renderedWidth) < 0.5 {
+                temporaryLength = renderedWidth + 1
+            } else {
+                temporaryLength = renderedWidth
+            }
+            self.toggleItem.length = temporaryLength
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self] in
+                guard let self, self.positionRefreshGeneration == generation else { return }
+                self.toggleItem.length = baseline
+            }
+        }
     }
 
     func updateMenu(isExpanded: Bool, guardianEnabled: Bool, hasAccessibilityPermission: Bool) {

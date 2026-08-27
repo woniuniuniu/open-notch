@@ -255,17 +255,14 @@ final class AppModel: ObservableObject {
         reordered.insert(moved, at: updatedTargetIndex + (placeAfterTarget ? 1 : 0))
         items = reordered
         objectWillChange.send()
-        // Replacing the assessment assertion asks MenuBarAgent to perform a
-        // normal layout pass. Unlike terminating the agent, this keeps the
-        // menu bar continuously visible while consuming the saved order.
-        applyMenuBarAgentVisibility(reason: L("Manual reorder"))
+        statusBar?.requestMenuBarPositionRefresh()
         Diagnostics.shared.append("Menu bar order saved and layout refresh requested without restarting MenuBarAgent")
     }
 
     func moveMenuBarItem(_ id: String, offset: Int) {
         guard offset != 0 else { return }
         let sortable = items.filter {
-            !$0.isProtected && $0.hostPID != 0 && disposition(for: $0) == .visible
+            !$0.isProtected && disposition(for: $0) == .visible
         }
         guard let index = sortable.firstIndex(where: { $0.id == id }) else { return }
         let targetIndex = index + offset
@@ -902,20 +899,29 @@ final class AppModel: ObservableObject {
 
     private func applyMenuBarAgentVisibility(reason: String) {
         guard MenuBarAgentBridge.isAvailable, !isStopping else { return }
-        guard !settings.isExpanded else {
-            menuBarAgentVisibility.invalidate()
-            Diagnostics.shared.append("MenuBarAgent restriction removed; reason=\(reason)")
-            return
+        // MBAssessmentModeConfiguration expects numeric system-item IDs, not
+        // MenuBarAgent's module names. Begin with the complete system set so a
+        // previously hidden item can be restored even before it is enumerated.
+        var allowedSystemItems = Set(0...8)
+        let systemItemIDs: [String: Int] = [
+            "Battery": 0, "Bluetooth": 1, "Clock": 2, "Display": 3,
+            "Keyboard": 4, "Sound": 5, "WiFi": 6,
+            "ScreenMirroring": 7, "BentoBox-0": 8,
+        ]
+        for item in items where item.semanticIdentifier.hasPrefix("module:") {
+            let module = String(item.semanticIdentifier.dropFirst("module:".count))
+            if !settings.isExpanded,
+               settings.disposition(for: item) == .hidden,
+               let id = systemItemIDs[module]
+            {
+                allowedSystemItems.remove(id)
+            }
         }
-        let allowedSystemItems = Set(items.compactMap { item -> String? in
-            guard item.semanticIdentifier.hasPrefix("module:") else { return nil }
-            return settings.disposition(for: item) == .visible
-                ? String(item.semanticIdentifier.dropFirst("module:".count))
-                : nil
-        })
         var allowed = Set(items.compactMap { item -> String? in
             guard !item.semanticIdentifier.hasPrefix("module:") else { return nil }
-            return settings.disposition(for: item) == .visible ? item.semanticBundleIdentifier : nil
+            return settings.isExpanded || settings.disposition(for: item) == .visible
+                ? item.semanticBundleIdentifier
+                : nil
         })
         if settings.oneDriveGuardianEnabled { allowed.insert("com.microsoft.OneDrive") }
         if let ownBundleID = Bundle.main.bundleIdentifier { allowed.insert(ownBundleID) }

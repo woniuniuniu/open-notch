@@ -21,7 +21,7 @@ final class SettingsStore: ObservableObject {
         static let aiRecommendationDates = "aiRecommendationDates.v1"
         static let aiItemDescriptions = "aiItemDescriptions.v1"
         static let hiddenItemPositions = "hiddenItemPositions.v1"
-        static let restoredSystemItemVisibility = "restoredSystemItemVisibility.v1"
+        static let restoredSystemItemVisibility = "restoredSystemItemVisibility.v2"
     }
 
     @Published var policies: [String: ItemDisposition] {
@@ -154,6 +154,13 @@ final class SettingsStore: ObservableObject {
             policies = policies.filter { id, _ in
                 !Self.isSystemStableID(id, knownItems: knownItems)
             }
+            if let controlCenter = UserDefaults(suiteName: "com.apple.controlcenter") {
+                for item in ["Battery", "WiFi", "Sound", "BentoBox", "BentoBox-0", "Clock"] {
+                    controlCenter.set(true, forKey: "NSStatusItem Visible \(item)")
+                    controlCenter.set(true, forKey: "NSStatusItem VisibleCC \(item)")
+                }
+                _ = controlCenter.synchronize()
+            }
             defaults.set(true, forKey: Key.restoredSystemItemVisibility)
         }
 
@@ -251,7 +258,9 @@ final class SettingsStore: ObservableObject {
                 displayName: binding.displayName,
                 symbolName: binding.symbolName,
                 frame: window.frame,
-                isProtected: binding.isProtected
+                // Old builds persisted Clock and Control Center as protected.
+                // Recompute this instead of reviving that obsolete restriction.
+                isProtected: binding.semanticBundleIdentifier == Bundle.main.bundleIdentifier
             )
         }
     }
