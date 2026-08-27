@@ -190,7 +190,10 @@ enum MenuBarDiscovery {
             ),
             symbolName: previous.symbolName,
             frame: window.frame,
-            isProtected: previous.isProtected || previous.semanticBundleIdentifier.hasPrefix("com.apple.")
+            isProtected: isProtected(
+                semanticIdentifier: previous.semanticIdentifier,
+                bundleIdentifier: previous.semanticBundleIdentifier
+            )
         )
     }
 
@@ -274,9 +277,6 @@ enum MenuBarDiscovery {
     }
 
     private static func isProtected(semanticIdentifier: String, bundleIdentifier: String) -> Bool {
-        // macOS-owned menu extras are managed by the system. Treat them as
-        // read-only so Open Notch never hides them or seeds a hidden policy.
-        if bundleIdentifier.hasPrefix("com.apple.") { return true }
         let protectedIdentifiers: Set<String> = [
             "com.apple.menuextra.clock",
             "com.apple.menuextra.controlcenter",

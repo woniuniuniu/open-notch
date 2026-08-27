@@ -21,6 +21,7 @@ final class SettingsStore: ObservableObject {
         static let aiRecommendationDates = "aiRecommendationDates.v1"
         static let aiItemDescriptions = "aiItemDescriptions.v1"
         static let hiddenItemPositions = "hiddenItemPositions.v1"
+        static let restoredSystemItemVisibility = "restoredSystemItemVisibility.v1"
     }
 
     @Published var policies: [String: ItemDisposition] {
@@ -146,6 +147,16 @@ final class SettingsStore: ObservableObject {
             ($0 as? NSNumber)?.doubleValue
         } ?? [:]
 
+        // One experimental build accidentally treated every Apple-owned item
+        // as hidden and then made it read-only. Restore those items once, but
+        // keep them manageable so later choices remain entirely user-driven.
+        if !defaults.bool(forKey: Key.restoredSystemItemVisibility) {
+            policies = policies.filter { id, _ in
+                !Self.isSystemStableID(id, knownItems: knownItems)
+            }
+            defaults.set(true, forKey: Key.restoredSystemItemVisibility)
+        }
+
         // Persist the sanitized values so invalid identities from pre-0.1.3
         // builds cannot return on the next launch.
         persistPolicies()
@@ -268,6 +279,15 @@ final class SettingsStore: ObservableObject {
     private static func isAnonymousStableID(_ stableID: String) -> Bool {
         stableID.hasPrefix("host:com.apple.controlcenter:")
             || stableID.hasPrefix("app:unknown.")
+    }
+
+    private static func isSystemStableID(
+        _ stableID: String,
+        knownItems: [String: KnownMenuBarItem]
+    ) -> Bool {
+        stableID.hasPrefix("agent:status:com.apple.")
+            || stableID.hasPrefix("agent:module:")
+            || knownItems[stableID]?.semanticBundleIdentifier.hasPrefix("com.apple.") == true
     }
 
     private static func isUsableBinding(_ binding: PersistedWindowBinding) -> Bool {

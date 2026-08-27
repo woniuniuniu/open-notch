@@ -239,10 +239,6 @@ final class AppModel: ObservableObject {
         let target = items[targetIndex]
         guard !source.isProtected, !target.isProtected else { return }
         let placeAfterTarget = sourceIndex < targetIndex
-        // MenuBarAgent is relaunched to consume its updated preferred order.
-        // Release the old visibility connection first, then reapply the user's
-        // hidden set after the replacement agent is ready.
-        menuBarAgentVisibility.invalidate()
         guard MenuBarAgentBridge.moveItem(
             source.semanticIdentifier,
             adjacentTo: target.semanticIdentifier,
@@ -250,7 +246,6 @@ final class AppModel: ObservableObject {
         ) else {
             Diagnostics.shared.append("MenuBarAgent reorder failed; source=\(source.id); target=\(target.id)")
             addEvent(L("Could not reorder menu bar item"))
-            applyMenuBarAgentVisibility(reason: L("Manual reorder"))
             return
         }
 
@@ -260,11 +255,22 @@ final class AppModel: ObservableObject {
         reordered.insert(moved, at: updatedTargetIndex + (placeAfterTarget ? 1 : 0))
         items = reordered
         objectWillChange.send()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
-            guard let self else { return }
-            self.applyMenuBarAgentVisibility(reason: L("Manual reorder"))
-            self.refresh(reason: L("Manual reorder"), reconcile: false)
+        // Replacing the assessment assertion asks MenuBarAgent to perform a
+        // normal layout pass. Unlike terminating the agent, this keeps the
+        // menu bar continuously visible while consuming the saved order.
+        applyMenuBarAgentVisibility(reason: L("Manual reorder"))
+        Diagnostics.shared.append("Menu bar order saved and layout refresh requested without restarting MenuBarAgent")
+    }
+
+    func moveMenuBarItem(_ id: String, offset: Int) {
+        guard offset != 0 else { return }
+        let sortable = items.filter {
+            !$0.isProtected && $0.hostPID != 0 && disposition(for: $0) == .visible
         }
+        guard let index = sortable.firstIndex(where: { $0.id == id }) else { return }
+        let targetIndex = index + offset
+        guard sortable.indices.contains(targetIndex) else { return }
+        reorderMenuBarItem(sourceID: id, targetID: sortable[targetIndex].id)
     }
 
     func exportDebugReport() {
@@ -875,7 +881,14 @@ final class AppModel: ObservableObject {
         case .hidden where currentDisposition != .hidden:
             settings.rememberPosition(item.frame.minX, for: item.id)
         case .visible where currentDisposition == .hidden:
-            if let position = settings.rememberedPosition(for: item.id) {
+            let frontPosition = items
+                .filter { $0.id != item.id && settings.disposition(for: $0) == .visible }
+                .map(\.frame.minX)
+                .min()
+                .map { $0 - 16 }
+            if let frontPosition {
+                _ = MenuBarAgentBridge.restorePosition(frontPosition, for: item.semanticIdentifier)
+            } else if let position = settings.rememberedPosition(for: item.id) {
                 _ = MenuBarAgentBridge.restorePosition(position, for: item.semanticIdentifier)
             }
         default:
@@ -894,13 +907,22 @@ final class AppModel: ObservableObject {
             Diagnostics.shared.append("MenuBarAgent restriction removed; reason=\(reason)")
             return
         }
+        let allowedSystemItems = Set(items.compactMap { item -> String? in
+            guard item.semanticIdentifier.hasPrefix("module:") else { return nil }
+            return settings.disposition(for: item) == .visible
+                ? String(item.semanticIdentifier.dropFirst("module:".count))
+                : nil
+        })
         var allowed = Set(items.compactMap { item -> String? in
             guard !item.semanticIdentifier.hasPrefix("module:") else { return nil }
             return settings.disposition(for: item) == .visible ? item.semanticBundleIdentifier : nil
         })
         if settings.oneDriveGuardianEnabled { allowed.insert("com.microsoft.OneDrive") }
         if let ownBundleID = Bundle.main.bundleIdentifier { allowed.insert(ownBundleID) }
-        menuBarAgentVisibility.apply(allowedBundleIdentifiers: allowed) { result in
+        menuBarAgentVisibility.apply(
+            allowedSystemItems: allowedSystemItems,
+            allowedBundleIdentifiers: allowed
+        ) { result in
             DispatchQueue.main.async {
                 switch result {
                 case .applied:

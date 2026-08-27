@@ -162,12 +162,14 @@
 "No changes are needed" = "当前布局无需调整";
 "Manual Management" = "手动管理";
 "Drag to reorder" = "拖动排序";
+"Move Up" = "上移";
+"Move Down" = "下移";
 "Manual reorder" = "手动排序";
 "Could not reorder menu bar item" = "无法调整菜单栏图标顺序";
 "Restart failed" = "重新启动失败";
 "Visible Items (%d)" = "正在显示（%d）";
 "Hidden Items (%d)" = "已经隐藏（%d）";
-"Drag the handle to reorder visible menu bar items." = "拖动左侧把手可调整正在显示的图标顺序。";
+"Drag the handle to reorder visible menu bar items." = "拖动左侧把手或使用箭头可调整正在显示的图标顺序。";
 "Hidden items keep their previous positions and do not participate in sorting." = "隐藏项目保留原来的位置，不参与排序。";
 "Show an item to return it to its previous position and make it sortable again." = "点击显示后，图标会回到原来的位置并重新参与排序。";
 "Not Running (%d)" = "当前未运行（%d）";

@@ -1,9 +1,14 @@
 import AppKit
 import ServiceManagement
 import SwiftUI
-import UniformTypeIdentifiers
 
 private enum OpenNotchTheme {
+    // macOS 27 uses noticeably softer, more continuous container geometry.
+    // Keep the hierarchy small and consistent across every settings pane.
+    static let windowCornerRadius: CGFloat = 26
+    static let panelCornerRadius: CGFloat = 14
+    static let controlCornerRadius: CGFloat = 10
+    static let compactCornerRadius: CGFloat = 8
     static let blue = Color(red: 0.24, green: 0.63, blue: 0.96)
     static let cyan = Color(red: 0.20, green: 0.78, blue: 0.82)
     static let magenta = Color(red: 0.93, green: 0.23, blue: 0.70)
@@ -32,7 +37,7 @@ struct SettingsRootView: View {
     var body: some View {
         ZStack {
             WindowVisualEffect()
-                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.windowCornerRadius, style: .continuous))
 
             VStack(spacing: 0) {
                 CompactTopBar(showMenu: $showSettingsMenu)
@@ -84,7 +89,7 @@ private struct WindowVisualEffect: NSViewRepresentable {
         view.blendingMode = .behindWindow
         view.state = .active
         view.wantsLayer = true
-        view.layer?.cornerRadius = 22
+        view.layer?.cornerRadius = OpenNotchTheme.windowCornerRadius
         view.layer?.borderWidth = 1
         view.layer?.borderColor = NSColor.white.withAlphaComponent(0.16).cgColor
         view.layer?.shadowColor = NSColor.black.withAlphaComponent(0.35).cgColor
@@ -109,7 +114,7 @@ private struct CompactTopBar: View {
 
             Image(nsImage: NSApplication.shared.applicationIconImage)
                 .resizable().frame(width: 26, height: 26)
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.compactCornerRadius, style: .continuous))
 
             HStack(spacing: 2) {
                 topTab(L("Overview"), pane: .overview, icon: "sparkles")
@@ -177,8 +182,8 @@ private struct SettingsQuickMenu: View {
             .background(Color.clear)
         }
         .padding(8)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.white.opacity(0.16), lineWidth: 1) }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous).stroke(.white.opacity(0.16), lineWidth: 1) }
         .shadow(color: .black.opacity(0.24), radius: 20, y: 8)
         .frame(width: 190)
     }
@@ -193,7 +198,7 @@ private struct SettingsQuickMenu: View {
         .frame(width: 164, height: 34, alignment: .leading)
         .contentShape(Rectangle())
         .onHover { hoveredMenu = $0 ? pane.id : nil }
-        .background(hoveredMenu == pane.id ? Color.primary.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 7))
+        .background(hoveredMenu == pane.id ? Color.primary.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
     }
 }
 
@@ -299,10 +304,10 @@ private struct AppSidebar: View {
                         .frame(height: 36)
                         .background {
                             if model.selectedPane == pane {
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous)
                                     .fill(OpenNotchTheme.blue.opacity(colorScheme == .dark ? 0.20 : 0.13))
                                     .overlay {
-                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous)
                                             .stroke(OpenNotchTheme.blue.opacity(0.28), lineWidth: 1)
                                     }
                                     .matchedGeometryEffect(id: "sidebarSelection", in: selectionNamespace)
@@ -352,10 +357,10 @@ private struct SidebarStatus: View {
         .frame(height: 48)
         .background(OpenNotchTheme.panelFill(for: colorScheme))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous)
                 .stroke(OpenNotchTheme.hairline(for: colorScheme), lineWidth: 1)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous))
     }
 }
 
@@ -451,10 +456,10 @@ private struct GlassPanel<Content: View>: View {
         }
         .background(OpenNotchTheme.panelFill(for: colorScheme))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous)
                 .stroke(OpenNotchTheme.hairline(for: colorScheme), lineWidth: 1)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous))
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.18 : 0.07), radius: 14, y: 7)
     }
 }
@@ -700,10 +705,10 @@ private struct MenuItemsPane: View {
                     .frame(height: 34)
                     .background(.thinMaterial)
                     .overlay {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous)
                             .stroke(.separator.opacity(0.55), lineWidth: 1)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
 
                     Button {
                         model.refresh(reason: L("Manual scan"), reconcile: false)
@@ -837,20 +842,26 @@ private struct MenuItemRow: View {
     var body: some View {
         HStack(spacing: 11) {
             if MenuBarAgentBridge.isAvailable && allowsReordering {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 28, height: 40)
-                    .contentShape(Rectangle())
-                    .help(L("Drag to reorder"))
-                    .accessibilityLabel(L("Drag to reorder"))
-                    .onDrag {
-                        NSItemProvider(object: item.id as NSString)
-                    } preview: {
-                        Label(item.displayName, systemImage: item.symbolName)
-                            .padding(8)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                HStack(spacing: 0) {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 22, height: 40)
+                        .contentShape(Rectangle())
+                        .help(L("Drag to reorder"))
+                        .accessibilityLabel(L("Drag to reorder"))
+                        .draggable(item.id) {
+                            Label(item.displayName, systemImage: item.symbolName)
+                                .padding(8)
+                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
+                        }
+
+                    VStack(spacing: 0) {
+                        reorderButton("chevron.up", offset: -1, help: L("Move Up"))
+                        reorderButton("chevron.down", offset: 1, help: L("Move Down"))
                     }
+                }
+                .frame(width: 42, height: 42)
             }
 
             MenuItemIcon(item: item)
@@ -885,19 +896,16 @@ private struct MenuItemRow: View {
         .padding(.horizontal, 7)
         .frame(height: 60)
         .background((isHovering || isDropTargeted) ? OpenNotchTheme.hoverFill(for: colorScheme) : .clear)
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
         .onHover { isHovering = $0 }
-        .onDrop(of: [UTType.text], isTargeted: $isDropTargeted) { providers in
-            guard MenuBarAgentBridge.isAvailable, allowsReordering, let provider = providers.first else {
+        .dropDestination(for: String.self) { sourceIDs, _ in
+            guard MenuBarAgentBridge.isAvailable, allowsReordering, let sourceID = sourceIDs.first else {
                 return false
             }
-            provider.loadObject(ofClass: NSString.self) { object, _ in
-                guard let sourceID = object as? String else { return }
-                Task { @MainActor in
-                    model.reorderMenuBarItem(sourceID: sourceID, targetID: item.id)
-                }
-            }
+            model.reorderMenuBarItem(sourceID: sourceID, targetID: item.id)
             return true
+        } isTargeted: { targeted in
+            isDropTargeted = targeted
         }
         .accessibilityElement(children: .contain)
     }
@@ -905,6 +913,21 @@ private struct MenuItemRow: View {
     private var secondaryText: String {
         settings.aiDescription(for: item.id, language: settings.language)
             ?? (item.detail.isEmpty ? item.semanticBundleIdentifier : item.detail)
+    }
+
+    private func reorderButton(_ symbol: String, offset: Int, help: String) -> some View {
+        Button {
+            model.moveMenuBarItem(item.id, offset: offset)
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
     }
 }
 
@@ -1193,7 +1216,7 @@ private struct AIRequestProgressView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
     }
 }
 
@@ -1251,7 +1274,7 @@ private struct AIBeforeAfterPreview: View {
             }
         }
         .padding(9)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
     }
 }
 
@@ -1288,6 +1311,7 @@ private struct GeneralPane: View {
                         .labelsHidden()
                         .pickerStyle(.segmented)
                         .frame(width: 150)
+                        .padding(.trailing, 10)
                     }
                 }
             }

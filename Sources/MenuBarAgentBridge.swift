@@ -33,9 +33,9 @@ enum MenuBarAgentBridge {
         return result.isEmpty ? nil : result
     }
 
-    /// Updates the preferred order, then asks MenuBarAgent to reload it. This
-    /// avoids both global dragging and the stale in-memory position cache that
-    /// otherwise ignores preference changes until the next agent launch.
+    /// Updates the preferred order without restarting MenuBarAgent. macOS 27
+    /// consumes the preference during its next natural layout refresh; forcing
+    /// that refresh by terminating the agent makes the entire menu bar blink.
     @MainActor
     static func moveItem(_ sourceKey: String, adjacentTo targetKey: String, placeAfterTarget: Bool) -> Bool {
         guard
@@ -75,12 +75,11 @@ enum MenuBarAgentBridge {
         let suite = UserDefaults(suiteName: domain)
         suite?.set(current, forKey: positionsKey)
         let synchronized = suite?.synchronize() ?? false
-        let reloaded = synchronized && reloadMenuBarAgent()
         Diagnostics.shared.append(
             "MenuBarAgent reorder; source=\(sourceKey); target=\(targetKey); " +
-            "after=\(placeAfterTarget); position=\(newPosition); reloaded=\(reloaded)"
+            "after=\(placeAfterTarget); position=\(newPosition); synchronized=\(synchronized)"
         )
-        return reloaded
+        return synchronized
     }
 
     @MainActor
@@ -94,17 +93,6 @@ enum MenuBarAgentBridge {
         let synchronized = suite?.synchronize() ?? false
         Diagnostics.shared.append("MenuBarAgent position restored; key=\(key); position=\(position); synchronized=\(synchronized)")
         return synchronized
-    }
-
-    @MainActor
-    private static func reloadMenuBarAgent() -> Bool {
-        guard let application = NSWorkspace.shared.runningApplications.first(where: {
-            $0.bundleIdentifier == "com.apple.MenuBarAgent"
-        }) else { return false }
-        // A graceful terminate can cascade through the menu-bar bootstrapper
-        // and take the client down with it on macOS 27. Signal only the
-        // WindowServer-owned agent; it will be relaunched by launchd.
-        return Darwin.kill(application.processIdentifier, SIGTERM) == 0
     }
 
     private static func makeItem(key: String, position: Double) -> MenuBarItem? {
@@ -124,7 +112,7 @@ enum MenuBarAgentBridge {
                 semanticIdentifier: key, rawTitle: itemID, displayName: name,
                 symbolName: symbolName(for: bundleID, itemID: itemID),
                 frame: CGRect(x: position, y: 0, width: 1, height: 24),
-                isProtected: bundleID == Bundle.main.bundleIdentifier || bundleID.hasPrefix("com.apple.")
+                isProtected: bundleID == Bundle.main.bundleIdentifier
             )
         }
         if key.hasPrefix("module:") {
@@ -146,7 +134,7 @@ enum MenuBarAgentBridge {
                 semanticIdentifier: key, rawTitle: module, displayName: names[module] ?? module,
                 symbolName: symbols[module] ?? "switch.2",
                 frame: CGRect(x: position, y: 0, width: 1, height: 24),
-                isProtected: true
+                isProtected: ["AudioVideoModule", "BentoBox-0", "Clock"].contains(module)
             )
         }
         return nil
@@ -187,16 +175,17 @@ final class MenuBarAgentVisibilityController {
 
     deinit { invalidate() }
 
-    func apply(allowedBundleIdentifiers: Set<String>, completion: @escaping (ApplyResult) -> Void) {
+    func apply(
+        allowedSystemItems: Set<String>,
+        allowedBundleIdentifiers: Set<String>,
+        completion: @escaping (ApplyResult) -> Void
+    ) {
         guard MenuBarAgentBridge.isAvailable else { completion(.unavailable); return }
         guard dlopen(MenuBarAgentBridge.frameworkPath, RTLD_NOW) != nil,
               let configurationClass = NSClassFromString("MBAssessmentModeConfiguration") as? NSObject.Type,
               let assertionClass = NSClassFromString("MBAssessmentModeAssertion") as? NSObject.Type
         else { completion(.unavailable); return }
 
-        let systemItems = MenuBarAgentBridge.positions()?.keys.compactMap { key in
-            key.hasPrefix("module:") ? String(key.dropFirst("module:".count)) : nil
-        } ?? []
         guard let configuration = class_createInstance(configurationClass, 0) as AnyObject? else {
             completion(.failed("configuration allocation failed")); return
         }
@@ -206,7 +195,7 @@ final class MenuBarAgentVisibilityController {
             completion(.unavailable); return
         }
         let configured = unsafeBitCast(method_getImplementation(configMethod), to: ConfigIMP.self)(
-            configuration, configSelector, systemItems as NSArray,
+            configuration, configSelector, allowedSystemItems.sorted() as NSArray,
             allowedBundleIdentifiers.sorted() as NSArray
         )
         guard let configured else { completion(.failed("configuration rejected")); return }
