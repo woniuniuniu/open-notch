@@ -175,7 +175,6 @@
 "No changes are needed" = "当前布局无需调整";
 "Manual Management" = "手动管理";
 "Drag to reorder" = "拖动排序";
-"Top means leftmost in the menu bar. Drop on the upper or lower half of a row to insert before or after it." = "列表顶部对应顶栏最左侧。拖到某一行的上半部会插入其前方，拖到下半部会插入其后方。";
 "Move Up" = "上移";
 "Move Down" = "下移";
 "Manual reorder" = "手动排序";

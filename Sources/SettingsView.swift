@@ -660,9 +660,6 @@ private struct MenuItemsPane: View {
                             accent: OpenNotchTheme.cyan
                         ) {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text(L("Top means leftmost in the menu bar. Drop on the upper or lower half of a row to insert before or after it."))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
                                 LazyVStack(spacing: 0) {
                                     ForEach(Array(model.filteredVisibleItems.enumerated()), id: \.element.id) { index, item in
                                         MenuItemRow(item: item, allowsReordering: true)
@@ -803,27 +800,29 @@ private struct MenuItemRow: View {
         }
         .padding(.horizontal, 7)
         .frame(height: 60)
-        .padding(.top, dropInsertion == .before ? 7 : 0)
-        .padding(.bottom, dropInsertion == .after ? 7 : 0)
-        .background((isHovering || dropInsertion != nil) ? OpenNotchTheme.hoverFill(for: colorScheme) : .clear)
+        // Move the entire neighbouring row out of the way, matching native
+        // macOS list reordering instead of highlighting a row as a target.
+        .offset(y: dropInsertion == .before ? 7 : dropInsertion == .after ? -7 : 0)
+        .padding(.top, dropInsertion == .before ? 14 : 0)
+        .padding(.bottom, dropInsertion == .after ? 14 : 0)
+        .background(isHovering && dropInsertion == nil ? OpenNotchTheme.hoverFill(for: colorScheme) : .clear)
         .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
         .overlay {
             if let dropInsertion, model.draggedMenuItemID != item.id {
                 VStack(spacing: 0) {
                     if dropInsertion == .after { Spacer(minLength: 0) }
-                    HStack(spacing: 0) {
-                        Circle().fill(Color.accentColor).frame(width: 7, height: 7)
-                        Rectangle().fill(Color.accentColor).frame(height: 3)
-                    }
-                    .padding(.horizontal, 7)
-                    .shadow(color: Color.accentColor.opacity(0.55), radius: 4)
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(height: 3)
+                        .padding(.horizontal, 5)
+                        .shadow(color: Color.accentColor.opacity(0.65), radius: 5)
                     if dropInsertion == .before { Spacer(minLength: 0) }
                 }
-                .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                .transition(.opacity.combined(with: .scale(scale: 0.88, anchor: .leading)))
                 .allowsHitTesting(false)
             }
         }
-        .animation(.spring(response: 0.24, dampingFraction: 0.82), value: dropInsertion)
+        .animation(.spring(response: 0.28, dampingFraction: 0.74), value: dropInsertion)
         .contentShape(Rectangle())
         .modifier(MenuRowDragModifier(enabled: MenuBarAgentBridge.isAvailable && allowsReordering, item: item))
         .onHover { isHovering = $0 }
