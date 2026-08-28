@@ -15,6 +15,20 @@ enum ItemDisposition: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+enum ExternalDisplayMode: String, CaseIterable, Codable, Identifiable {
+    case showAll
+    case sameLayout
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .showAll: L("Show All")
+        case .sameLayout: L("Use Built-in Display Layout")
+        }
+    }
+}
+
 struct MenuBarItem: Identifiable, Equatable {
     let id: String
     let windowID: CGWindowID
@@ -57,6 +71,7 @@ struct KnownMenuBarItem: Codable, Equatable, Identifiable {
     var detail: String
     var symbolName: String
     var semanticBundleIdentifier: String
+    var semanticIdentifier: String? = nil
     var lastSeen: Date
 }
 
@@ -77,9 +92,7 @@ struct GuardianEvent: Identifiable, Equatable {
 }
 
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case overview
     case menuItems
-    case oneDrive
     case general
     case about
 
@@ -87,9 +100,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .overview: L("Overview")
         case .menuItems: L("Menu Bar Items")
-        case .oneDrive: "OneDrive"
         case .general: L("General")
         case .about: L("About")
         }
@@ -97,9 +108,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 
     var symbolName: String {
         switch self {
-        case .overview: "rectangle.topthird.inset.filled"
         case .menuItems: "menubar.rectangle"
-        case .oneDrive: "cloud.fill"
         case .general: "gearshape"
         case .about: "info.circle"
         }

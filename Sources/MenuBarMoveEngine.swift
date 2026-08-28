@@ -16,26 +16,17 @@ enum MenuBarMoveEngine {
         }
     }
 
-    /// Keeps WindowServer's synthetic menu bar event coordinates invisible
-    /// and restores the pointer exactly where the user left it. Menu bar
-    /// reordering has no public API and still requires a targeted mouse event,
-    /// but that event must never take ownership of the user's visible cursor.
+    /// Observes real HID input while a legacy targeted event is routed. The
+    /// compatibility path never hides, warps, or otherwise moves the user's
+    /// visible cursor; macOS 27 and later do not create this object at all.
     private final class CursorShield {
-        let originalLocation: CGPoint
-        let displayID: CGDirectDisplayID
-        private var cursorWasHidden = false
         private let lock = NSLock()
-        private var latestPhysicalLocation: CGPoint
         private var receivedPhysicalInput = false
         private var eventTap: CFMachPort?
         private var runLoopSource: CFRunLoopSource?
         private let runLoop: CFRunLoop
 
         init?() {
-            guard let originalLocation = CGEvent(source: nil)?.location else { return nil }
-            self.originalLocation = originalLocation
-            latestPhysicalLocation = originalLocation
-            displayID = Self.display(containing: originalLocation) ?? CGMainDisplayID()
             guard let currentRunLoop = CFRunLoopGetCurrent() else { return nil }
             runLoop = currentRunLoop
 
@@ -71,7 +62,6 @@ enum MenuBarMoveEngine {
                     CGEvent.tapEnable(tap: eventTap, enable: true)
                 }
             }
-            cursorWasHidden = CGDisplayHideCursor(displayID) == .success
         }
 
         var userInteracted: Bool {
@@ -84,33 +74,12 @@ enum MenuBarMoveEngine {
             if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: false) }
             if let runLoopSource { CFRunLoopRemoveSource(runLoop, runLoopSource, .commonModes) }
             if let eventTap { CFMachPortInvalidate(eventTap) }
-
-            lock.lock()
-            let restoreLocation = latestPhysicalLocation
-            lock.unlock()
-            // A real HID event updates latestPhysicalLocation, while our
-            // synthetic session events do not. If the user moved or clicked
-            // during a background operation, restore to their newest physical
-            // position instead of yanking them back to an older location.
-            CGWarpMouseCursorPosition(restoreLocation)
-            if cursorWasHidden {
-                CGDisplayShowCursor(displayID)
-            }
         }
 
-        private func recordPhysicalInput(at location: CGPoint) {
+        private func recordPhysicalInput(at _: CGPoint) {
             lock.lock()
-            latestPhysicalLocation = location
             receivedPhysicalInput = true
             lock.unlock()
-        }
-
-        private static func display(containing point: CGPoint) -> CGDirectDisplayID? {
-            var count: UInt32 = 0
-            guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return nil }
-            var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
-            guard CGGetActiveDisplayList(count, &displays, &count) == .success else { return nil }
-            return displays.prefix(Int(count)).first { CGDisplayBounds($0).contains(point) }
         }
     }
 

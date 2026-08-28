@@ -12,11 +12,12 @@ final class StatusBarController: NSObject {
     private let boundaryItem: NSStatusItem
     private var boundaryWidthConstraint: NSLayoutConstraint?
     private var menu: NSMenu?
+    private var hiddenItemsPanel: NSPanel?
+    private var hiddenItemsEventMonitors: [Any] = []
 
-    var onToggle: (() -> Void)?
+    var onShowHiddenItems: (() -> Void)?
     var onOpenSettings: (() -> Void)?
     var onRefresh: (() -> Void)?
-    var onToggleGuardian: (() -> Void)?
     var onRestart: (() -> Void)?
     var onExportDebug: (() -> Void)?
 
@@ -53,6 +54,22 @@ final class StatusBarController: NSObject {
     }
 
     func setExpanded(_ expanded: Bool) {
+        // macOS 27 uses MenuBarAgent visibility assertions. The legacy
+        // 10,000-point boundary is neither needed nor safe there: even when
+        // transparent, its status window can intercept clicks intended for
+        // Wi-Fi, Battery, and other system items.
+        if PlatformVersion.isMacOS27OrNewer {
+            boundaryWidthConstraint?.isActive = false
+            boundaryItem.length = 0
+            if let window = boundaryItem.button?.window {
+                window.setContentSize(NSSize(width: 1, height: window.frame.height))
+                window.ignoresMouseEvents = true
+            }
+            toggleItem.button?.contentTintColor = nil
+            toggleItem.button?.toolTip = L("App Name")
+            return
+        }
+
         if expanded {
             boundaryItem.length = 0
             boundaryWidthConstraint?.isActive = false
@@ -70,7 +87,7 @@ final class StatusBarController: NSObject {
         toggleItem.button?.toolTip = L("App Name")
     }
 
-    func updateMenu(isExpanded: Bool, guardianEnabled: Bool, hasAccessibilityPermission: Bool) {
+    func updateMenu(hasAccessibilityPermission: Bool) {
         let menu = NSMenu(title: L("App Name"))
         menu.autoenablesItems = false
 
@@ -92,24 +109,14 @@ final class StatusBarController: NSObject {
         menu.addItem(.separator())
 
         let visibilityItem = NSMenuItem(
-            title: isExpanded ? L("Collapse Hidden Items") : L("Expand Hidden Items"),
-            action: #selector(toggleFromMenu),
+            title: L("Hidden Items"),
+            action: #selector(showHiddenFromMenu),
             keyEquivalent: ""
         )
         visibilityItem.target = self
-        visibilityItem.image = NSImage(systemSymbolName: isExpanded ? "eye.slash" : "eye", accessibilityDescription: nil)
+        visibilityItem.image = NSImage(systemSymbolName: "rectangle.stack", accessibilityDescription: nil)
         visibilityItem.isEnabled = true
         menu.addItem(visibilityItem)
-
-        let guardianItem = NSMenuItem(
-            title: L("Keep OneDrive Pinned"),
-            action: #selector(toggleGuardianFromMenu),
-            keyEquivalent: ""
-        )
-        guardianItem.target = self
-        guardianItem.state = guardianEnabled ? .on : .off
-        guardianItem.isEnabled = true
-        menu.addItem(guardianItem)
 
         let refreshItem = NSMenuItem(title: L("Scan Now"), action: #selector(refreshFromMenu), keyEquivalent: "r")
         refreshItem.target = self
@@ -143,7 +150,67 @@ final class StatusBarController: NSObject {
         menu.addItem(quitItem)
 
         self.menu = menu
-        toggleItem.menu = menu
+    }
+
+    func showHiddenItems(
+        _ items: [MenuBarItem],
+        activate: @escaping (MenuBarItem) -> Void,
+        manage: @escaping () -> Void
+    ) {
+        guard let button = toggleItem.button else { return }
+        closeHiddenItemsBar()
+        // Keep the bar pinned while a hidden item's own menu is open. Closing
+        // it first leaves the third-party popover visually detached from the
+        // icon the user just clicked.
+        let activateItem: (MenuBarItem) -> Void = { item in activate(item) }
+        let manageItems: () -> Void = { [weak self] in
+                self?.closeHiddenItemsBar()
+                manage()
+            }
+        let naturalWidth = CGFloat(items.count * 42 + 66)
+        let availableWidth = max(220, (button.window?.screen?.visibleFrame.width ?? 700) - 40)
+        let size = NSSize(
+            width: min(max(items.isEmpty ? 190 : naturalWidth, 116), min(680, availableWidth)),
+            height: 62
+        )
+        guard let anchorWindow = button.window, let screen = anchorWindow.screen else { return }
+
+        let panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.level = .popUpMenu
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+        panel.hidesOnDeactivate = false
+        panel.contentView = HiddenItemsBarView(
+            frame: NSRect(origin: .zero, size: size),
+            items: items,
+            activate: activateItem,
+            manage: manageItems
+        )
+        panel.acceptsMouseMovedEvents = true
+        panel.becomesKeyOnlyIfNeeded = true
+
+        let anchor = anchorWindow.frame
+        let proposedX = anchor.midX - size.width / 2
+        let x = min(max(proposedX, screen.visibleFrame.minX + 10), screen.visibleFrame.maxX - size.width - 10)
+        let y = anchor.minY - size.height - 3
+        panel.setFrameOrigin(NSPoint(x: x, y: y))
+        panel.contentView?.layoutSubtreeIfNeeded()
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.16
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1
+        }
+        hiddenItemsPanel = panel
+        installHiddenItemsDismissMonitors()
     }
 
     private func configureBoundary() {
@@ -159,7 +226,10 @@ final class StatusBarController: NSObject {
     private func configureToggle() {
         guard let button = toggleItem.button else { return }
         button.imagePosition = .imageOnly
-        button.image = symbol("menubar.rectangle", pointSize: 14, weight: .semibold)
+        button.image = symbol("chevron.down", pointSize: 13, weight: .bold)
+        button.target = self
+        button.action = #selector(statusItemClicked)
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         button.setAccessibilityIdentifier("OpenNotch.Toggle")
         button.setAccessibilityLabel(L("App Name"))
         button.toolTip = L("App Name")
@@ -206,8 +276,38 @@ final class StatusBarController: NSObject {
         return MenuBarDiscovery.closestStatusWindow(to: cgFrame)
     }
 
-    @objc private func toggleFromMenu() { onToggle?() }
-    @objc private func toggleGuardianFromMenu() { onToggleGuardian?() }
+    @objc private func statusItemClicked() {
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            closeHiddenItemsBar()
+            guard let menu, let button = toggleItem.button else { return }
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.minY), in: button)
+        } else if hiddenItemsPanel?.isVisible == true {
+            closeHiddenItemsBar()
+        } else {
+            onShowHiddenItems?()
+        }
+    }
+
+    private func installHiddenItemsDismissMonitors() {
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
+            if event.keyCode == 53 { // Escape
+                self?.closeHiddenItemsBar()
+                return nil
+            }
+            return event
+        }) {
+            hiddenItemsEventMonitors.append(monitor)
+        }
+    }
+
+    func closeHiddenItemsBar() {
+        hiddenItemsPanel?.orderOut(nil)
+        hiddenItemsPanel = nil
+        for monitor in hiddenItemsEventMonitors { NSEvent.removeMonitor(monitor) }
+        hiddenItemsEventMonitors.removeAll()
+    }
+
+    @objc private func showHiddenFromMenu() { onShowHiddenItems?() }
     @objc private func refreshFromMenu() { onRefresh?() }
     @objc private func openSettingsFromMenu() { onOpenSettings?() }
     @objc private func exportDebug() { onExportDebug?() }

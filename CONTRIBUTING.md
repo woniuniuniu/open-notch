@@ -13,8 +13,9 @@ Thanks for helping improve Open Notch.
 
 Run `./build.sh` on an Apple silicon Mac with macOS 14 or later. Test changes
 with a clean Accessibility permission state when they touch discovery or move
-behavior. Keep read-only discovery separate from input-event code, and avoid
-adding network access or telemetry.
+behavior. Keep read-only discovery separate from input-event code. Do not add
+telemetry, and keep all network behavior explicit, opt-in, documented, and
+limited to the existing AI service boundary.
 
 ## Pull requests
 

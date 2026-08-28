@@ -8,6 +8,8 @@ final class Diagnostics {
     private let maxLines = 500
     private var lines: [String] = []
     private let fileURL: URL
+    private let persistenceQueue = DispatchQueue(label: "com.openbartender.OpenNotch.Diagnostics", qos: .utility)
+    private var pendingWrite: DispatchWorkItem?
 
     private init() {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -23,7 +25,7 @@ final class Diagnostics {
         let stamp = ISO8601DateFormatter().string(from: .now)
         lines.append("\(stamp) \(message)")
         if lines.count > maxLines { lines.removeFirst(lines.count - maxLines) }
-        try? lines.joined(separator: "\n").appending("\n").write(to: fileURL, atomically: true, encoding: .utf8)
+        schedulePersistence()
     }
 
     func exportReport(summary: String) -> URL? {
@@ -40,5 +42,16 @@ final class Diagnostics {
             append("Debug export failed: \(error.localizedDescription)")
             return nil
         }
+    }
+
+    private func schedulePersistence() {
+        pendingWrite?.cancel()
+        let content = lines.joined(separator: "\n").appending("\n")
+        let url = fileURL
+        let work = DispatchWorkItem {
+            try? content.write(to: url, atomically: true, encoding: .utf8)
+        }
+        pendingWrite = work
+        persistenceQueue.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
 }

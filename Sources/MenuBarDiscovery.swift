@@ -18,6 +18,9 @@ enum MenuBarDiscovery {
         excluding excludedWindowIDs: Set<CGWindowID> = [],
         previousItems: [MenuBarItem] = []
     ) -> [MenuBarItem] {
+        if PlatformVersion.isMacOS27OrNewer {
+            return macOS27Items(from: AccessibilityResolver.menuExtras())
+        }
         let windows = statusWindows().filter { !excludedWindowIDs.contains($0.windowID) }
         let semanticExtras = AccessibilityResolver.menuExtras()
         let previousByWindowID = Dictionary(
@@ -97,6 +100,62 @@ enum MenuBarDiscovery {
         }
 
         return deduplicated(result)
+    }
+
+    /// macOS 27 composites status items into MenuBarAgent and no longer gives
+    /// third-party clients one CGWindowID per icon. AXExtrasMenuBar is now the
+    /// source of truth, so these deterministic IDs are identities rather than
+    /// real WindowServer handles.
+    private static func macOS27Items(from extras: [SemanticMenuExtra]) -> [MenuBarItem] {
+        var occurrences = [String: Int]()
+        return extras.sorted { $0.frame.minX < $1.frame.minX }.map { semantic in
+            let rawTitle = firstNonEmpty(semantic.title, semantic.description, semantic.identifier)
+            let baseID: String
+            if semantic.bundleIdentifier == "com.microsoft.OneDrive" {
+                baseID = "app:com.microsoft.OneDrive"
+            } else if !semantic.identifier.isEmpty {
+                baseID = "extra:\(semantic.bundleIdentifier):\(semantic.identifier)"
+            } else {
+                baseID = "app:\(semantic.bundleIdentifier):\(normalizedTitle(rawTitle))"
+            }
+            let occurrence = occurrences[baseID, default: 0]
+            occurrences[baseID] = occurrence + 1
+            let stableID = occurrence == 0 ? baseID : "\(baseID):\(occurrence)"
+            return MenuBarItem(
+                id: stableID,
+                windowID: syntheticWindowID(for: stableID),
+                hostPID: semantic.hostPID,
+                hostBundleIdentifier: semantic.bundleIdentifier,
+                semanticBundleIdentifier: semantic.bundleIdentifier,
+                semanticIdentifier: semantic.identifier,
+                rawTitle: rawTitle,
+                displayName: displayName(
+                    semanticBundleIdentifier: semantic.bundleIdentifier,
+                    semanticIdentifier: semantic.identifier,
+                    applicationName: semantic.applicationName,
+                    title: rawTitle,
+                    hostName: semantic.applicationName
+                ),
+                symbolName: symbolName(
+                    semanticBundleIdentifier: semantic.bundleIdentifier,
+                    semanticIdentifier: semantic.identifier,
+                    title: rawTitle
+                ),
+                frame: semantic.frame,
+                isProtected: isProtected(
+                    semanticIdentifier: semantic.identifier,
+                    bundleIdentifier: semantic.bundleIdentifier
+                )
+            )
+        }
+    }
+
+    private static func syntheticWindowID(for identity: String) -> CGWindowID {
+        var hash: UInt32 = 2_166_136_261
+        for byte in identity.utf8 {
+            hash = (hash ^ UInt32(byte)) &* 16_777_619
+        }
+        return (hash | 0x8000_0000) == 0 ? 0x8000_0001 : (hash | 0x8000_0000)
     }
 
     static func statusWindow(id: CGWindowID) -> RawStatusWindow? {
@@ -270,11 +329,26 @@ enum MenuBarDiscovery {
     }
 
     private static func isProtected(semanticIdentifier: String, bundleIdentifier: String) -> Bool {
+        // macOS 27 exposes Apple-owned items through the composite
+        // MenuBarAgent, but does not give third-party apps a supported,
+        // item-level way to move them. Treat them as system-managed so stale
+        // Wi-Fi/Siri identities never enter the editable app policy list.
+        if PlatformVersion.isMacOS27OrNewer, bundleIdentifier.hasPrefix("com.apple.") {
+            return true
+        }
         let protectedIdentifiers: Set<String> = [
             "com.apple.menuextra.clock",
             "com.apple.menuextra.controlcenter",
         ]
-        return protectedIdentifiers.contains(semanticIdentifier) || bundleIdentifier == (Bundle.main.bundleIdentifier ?? "")
+        let protectedBundles: Set<String> = [
+            "com.apple.MenuBarAgent",
+            "com.apple.systemuiserver",
+            "com.apple.TextInputMenuAgent",
+            "com.apple.campo",
+        ]
+        return protectedIdentifiers.contains(semanticIdentifier)
+            || protectedBundles.contains(bundleIdentifier)
+            || bundleIdentifier == (Bundle.main.bundleIdentifier ?? "")
     }
 
     private static func normalizedTitle(_ title: String) -> String {

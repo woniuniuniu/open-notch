@@ -10,14 +10,14 @@ final class AppModel: ObservableObject {
     @Published private(set) var isScanning = false
     @Published private(set) var hasAccessibilityPermission = false
     @Published private(set) var guardianEvents = [GuardianEvent]()
-    @Published private(set) var lastScanDate: Date?
+    private(set) var lastScanDate: Date?
     @Published private(set) var launchAtLogin = false
     @Published private(set) var aiRecommendation: AIRecommendation?
     @Published private(set) var isRequestingAIRecommendation = false
     @Published private(set) var aiRecommendationMessage: String?
     @Published private(set) var aiRequestPhase: AIRequestPhase?
     @Published var selectedAIPlanID: String?
-    @Published var selectedPane: SettingsPane? = .overview
+    @Published var selectedPane: SettingsPane? = .menuItems
     @Published var searchText = ""
 
     let settings = SettingsStore.shared
@@ -25,8 +25,9 @@ final class AppModel: ObservableObject {
     private var statusBar: StatusBarController?
     private var timer: Timer?
     private var observers = [NSObjectProtocol]()
+    private var scanInProgress = false
     private var isMoving = false
-    private var pendingRefresh: (reason: String, reconcile: Bool)?
+    private var pendingRefresh: (reason: String, reconcile: Bool, showsProgress: Bool)?
     private var itemsByWindowID = [CGWindowID: MenuBarItem]()
     // Computed once per discovery pass; never query CoreGraphics from a SwiftUI row.
     private var actualDispositions = [String: ItemDisposition]()
@@ -43,10 +44,19 @@ final class AppModel: ObservableObject {
     private var aiApplyQueue = [(MenuBarItem, ItemDisposition)]()
     private var aiApplyChangedCount = 0
     private var aiApplyCompletionMessage = ""
+    private var pendingAIRequest = false
+    private var permissionCheckToken = UUID()
+    private struct PendingExplicitMove {
+        let item: MenuBarItem
+        let disposition: ItemDisposition
+        let reason: String
+        let collapseAfterSuccess: Bool
+    }
+    private var pendingExplicitMoves = [String: PendingExplicitMove]()
+    private var pendingExplicitMoveOrder = [String]()
 
     private init() {}
 
-    var isExpanded: Bool { settings.isExpanded }
     var oneDriveItem: MenuBarItem? { items.first(where: \.isOneDrive) }
 
     private var aiRecommendationCountToday: Int {
@@ -63,7 +73,7 @@ final class AppModel: ObservableObject {
     }
 
     var canRequestAIRecommendation: Bool {
-        !isRequestingAIRecommendation && !isScanning && aiRemainingRecommendationCount > 0
+        !isRequestingAIRecommendation && !scanInProgress && aiRemainingRecommendationCount > 0
     }
 
     var aiAvailabilityMessage: String {
@@ -87,10 +97,60 @@ final class AppModel: ObservableObject {
         items.filter { disposition(for: $0) == .hidden }
     }
 
+    private var currentlyManageableItems: [MenuBarItem] {
+        let manageable = items.filter { !$0.isProtected }
+        guard PlatformVersion.isMacOS27OrNewer else { return manageable }
+        var seenBundles = Set<String>()
+        return manageable.filter { item in
+            guard !item.semanticBundleIdentifier.isEmpty else { return false }
+            return seenBundles.insert(item.semanticBundleIdentifier).inserted
+        }
+    }
+
+    var managedItems: [MenuBarItem] {
+        let current = currentlyManageableItems
+        let currentBundles = Set(current.map(\.semanticBundleIdentifier))
+        var latestByBundle = [String: KnownMenuBarItem]()
+        for known in settings.knownItems.values where !currentBundles.contains(known.semanticBundleIdentifier) {
+            guard
+                !known.semanticBundleIdentifier.isEmpty,
+                !(PlatformVersion.isMacOS27OrNewer && known.semanticBundleIdentifier.hasPrefix("com.apple."))
+            else { continue }
+            if latestByBundle[known.semanticBundleIdentifier].map({ $0.lastSeen < known.lastSeen }) ?? true {
+                latestByBundle[known.semanticBundleIdentifier] = known
+            }
+        }
+        let dormant: [MenuBarItem] = latestByBundle.values.map { known in
+            let resolvedName = ApplicationIconResolver.shared.applicationName(
+                for: known.semanticBundleIdentifier,
+                fallback: known.displayName
+            )
+            return MenuBarItem(
+                id: known.id,
+                windowID: 0,
+                hostPID: 0,
+                hostBundleIdentifier: known.semanticBundleIdentifier,
+                semanticBundleIdentifier: known.semanticBundleIdentifier,
+                semanticIdentifier: known.semanticIdentifier ?? "",
+                rawTitle: known.detail,
+                displayName: resolvedName,
+                symbolName: known.symbolName,
+                frame: .zero,
+                isProtected: false
+            )
+        }.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+        return current + dormant
+    }
+
+    func isItemCurrentlyAvailable(_ item: MenuBarItem) -> Bool {
+        items.contains { $0.id == item.id && !$0.isProtected }
+    }
+
     var filteredItems: [MenuBarItem] {
-        guard !searchText.isEmpty else { return items.filter { !$0.isProtected } }
-        return items.filter {
-            !$0.isProtected && ($0.displayName.localizedCaseInsensitiveContains(searchText) || $0.detail.localizedCaseInsensitiveContains(searchText))
+        guard !searchText.isEmpty else { return managedItems }
+        return managedItems.filter {
+            $0.displayName.localizedCaseInsensitiveContains(searchText)
+                || $0.detail.localizedCaseInsensitiveContains(searchText)
         }
     }
 
@@ -104,10 +164,9 @@ final class AppModel: ObservableObject {
         settings.isExpanded = false
 
         let statusBar = StatusBarController()
-        statusBar.onToggle = { [weak self] in self?.toggleExpanded() }
+        statusBar.onShowHiddenItems = { [weak self] in self?.showHiddenItemsPopover() }
         statusBar.onOpenSettings = { [weak self] in self?.openSettingsAction?() }
         statusBar.onRefresh = { [weak self] in self?.refresh(reason: L("Manual scan"), reconcile: true) }
-        statusBar.onToggleGuardian = { [weak self] in self?.toggleGuardian() }
         statusBar.onRestart = { [weak self] in self?.restartApplication() }
         statusBar.onExportDebug = { [weak self] in self?.exportDebugReport() }
         self.statusBar = statusBar
@@ -208,7 +267,6 @@ final class AppModel: ObservableObject {
         Accessibility: \(hasAccessibilityPermission)
         Expanded: \(settings.isExpanded)
         Continuous monitor: \(settings.continuousMonitorEnabled)
-        OneDrive guardian: \(settings.oneDriveGuardianEnabled)
         OneDrive running: \(isOneDriveRunning)
         Item count: \(items.count)
         Visible count: \(visibleItems.count)
@@ -224,24 +282,25 @@ final class AppModel: ObservableObject {
         """
     }
 
-    func refresh(reason: String = L("Scan"), reconcile: Bool = false) {
+    func refresh(
+        reason: String = L("Scan"),
+        reconcile: Bool = false,
+        showsProgress: Bool = false
+    ) {
         guard !isRequestingAIRecommendation else {
-            if pendingRefresh == nil || reconcile {
-                pendingRefresh = (reason, reconcile)
-            }
+            queuePendingRefresh(reason: reason, reconcile: reconcile, showsProgress: showsProgress)
             Diagnostics.shared.append("Scan deferred while AI recommendation is running; reason=\(reason)")
             return
         }
-        guard !isScanning else {
+        guard !scanInProgress else {
             // Coalesce bursts from timers, workspace notifications, and user actions.
-            if pendingRefresh == nil || reconcile {
-                pendingRefresh = (reason, reconcile)
-            }
+            queuePendingRefresh(reason: reason, reconcile: reconcile, showsProgress: showsProgress)
             Diagnostics.shared.append("Scan coalesced; reason=\(reason); reconcile=\(reconcile)")
             return
         }
         Diagnostics.shared.append("Scan started; reason=\(reason); reconcile=\(reconcile)")
-        isScanning = true
+        scanInProgress = true
+        if showsProgress { isScanning = true }
         let isTrusted = AccessibilityResolver.isTrusted()
         if hasAccessibilityPermission != isTrusted {
             hasAccessibilityPermission = isTrusted
@@ -260,17 +319,15 @@ final class AppModel: ObservableObject {
                     uniquingKeysWith: { current, _ in current }
                 )
                 if scanChanged {
-                    self.items = scanned.sorted { lhs, rhs in
-                        if lhs.isOneDrive != rhs.isOneDrive { return lhs.isOneDrive }
-                        return lhs.frame.minX < rhs.frame.minX
-                    }
+                    self.items = scanned.sorted { $0.frame.minX < $1.frame.minX }
                 }
-                self.updateActualDispositions()
+                let actualChanged = self.updateActualDispositions()
                 self.settings.remember(scanned)
                 self.lastScanDate = .now
-                self.isScanning = false
+                self.scanInProgress = false
+                if self.isScanning { self.isScanning = false }
                 Diagnostics.shared.append("Scan finished; items=\(scanned.count); visible=\(self.visibleItems.count); hidden=\(self.hiddenItems.count); accessibility=\(self.hasAccessibilityPermission)")
-                self.objectWillChange.send()
+                if scanChanged || actualChanged { self.objectWillChange.send() }
 
                 if self.identityRebindInProgress {
                     self.finishIdentityRebind()
@@ -278,8 +335,24 @@ final class AppModel: ObservableObject {
                 }
                 if reconcile { self.reconcile(reason: reason) }
                 self.runPendingRefreshIfNeeded()
+                if self.pendingAIRequest {
+                    self.pendingAIRequest = false
+                    DispatchQueue.main.async { [weak self] in self?.requestAIRecommendation() }
+                }
             }
         }
+    }
+
+    private func queuePendingRefresh(reason: String, reconcile: Bool, showsProgress: Bool) {
+        guard let current = pendingRefresh else {
+            pendingRefresh = (reason, reconcile, showsProgress)
+            return
+        }
+        pendingRefresh = (
+            showsProgress ? reason : current.reason,
+            current.reconcile || reconcile,
+            current.showsProgress || showsProgress
+        )
     }
 
     private func isEquivalentScan(_ scanned: [MenuBarItem]) -> Bool {
@@ -290,8 +363,14 @@ final class AppModel: ObservableObject {
             return current.displayName == item.displayName
                 && current.symbolName == item.symbolName
                 && current.semanticBundleIdentifier == item.semanticBundleIdentifier
+                && current.semanticIdentifier == item.semanticIdentifier
+                && current.windowID == item.windowID
+                && current.hostPID == item.hostPID
+                && current.isProtected == item.isProtected
                 && abs(current.frame.minX - item.frame.minX) < 0.5
                 && abs(current.frame.maxX - item.frame.maxX) < 0.5
+                && abs(current.frame.minY - item.frame.minY) < 0.5
+                && abs(current.frame.maxY - item.frame.maxY) < 0.5
         }
     }
 
@@ -299,15 +378,25 @@ final class AppModel: ObservableObject {
         guard let pendingRefresh else { return }
         self.pendingRefresh = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            self?.refresh(reason: pendingRefresh.reason, reconcile: pendingRefresh.reconcile)
+            self?.refresh(
+                reason: pendingRefresh.reason,
+                reconcile: pendingRefresh.reconcile,
+                showsProgress: pendingRefresh.showsProgress
+            )
         }
     }
 
     func setDisposition(_ disposition: ItemDisposition, for item: MenuBarItem) {
         Diagnostics.shared.append("User disposition; item=\(item.displayName); id=\(item.id); window=\(item.windowID); hostPID=\(item.hostPID); target=\(disposition.rawValue)")
-        settings.setDisposition(disposition, for: item.id)
+        settings.setDisposition(disposition, for: item)
         layoutReconciler.reset(item.id)
         DispatchQueue.main.async { [weak self] in self?.objectWillChange.send() }
+        guard isItemCurrentlyAvailable(item) else {
+            Diagnostics.shared.append(
+                "Dormant item policy saved; item=\(item.displayName); bundle=\(item.semanticBundleIdentifier); target=\(disposition.rawValue)"
+            )
+            return
+        }
         move(
             item,
             to: disposition,
@@ -318,11 +407,16 @@ final class AppModel: ObservableObject {
     }
 
     func requestAIRecommendation() {
+        if scanInProgress {
+            pendingAIRequest = true
+            aiRecommendationMessage = L("Preparing the latest scan")
+            return
+        }
         guard canRequestAIRecommendation else {
             aiRecommendationMessage = aiAvailabilityMessage
             return
         }
-        let manageable = items.filter { !$0.isProtected }
+        let manageable = currentlyManageableItems
         guard !manageable.isEmpty else {
             aiRecommendationMessage = L("No menu bar items are available for AI analysis")
             return
@@ -332,7 +426,9 @@ final class AppModel: ObservableObject {
         isRequestingAIRecommendation = true
         aiRequestPhase = .preparing
         aiRecommendationMessage = nil
-        let snapshotItems = manageable
+        // The cloud contract accepts at most 80 items. Keep the local snapshot
+        // identical to what is sent so validation cannot reject a valid reply.
+        let snapshotItems = Array(manageable.prefix(80))
         let snapshotDispositions = Dictionary(uniqueKeysWithValues: snapshotItems.map { ($0.id, disposition(for: $0)) })
         aiRecommendationItems = snapshotItems
         aiRecommendationBeforeDispositions = snapshotDispositions
@@ -340,6 +436,11 @@ final class AppModel: ObservableObject {
         selectedAIPlanID = nil
         let language = settings.language
         let installationID = settings.aiInstallationID
+        let deviceContext = AIRecommendationService.deviceContext()
+        Diagnostics.shared.append(
+            "AI request context; model=\(deviceContext.modelIdentifier); macOS=\(deviceContext.macOSVersion); " +
+            "systemItems=\(deviceContext.systemItemManagement); displays=\(deviceContext.displays.count); items=\(snapshotItems.count)"
+        )
         aiRequestPhase = .analyzing
 
         Task { [weak self] in
@@ -348,7 +449,8 @@ final class AppModel: ObservableObject {
                     items: snapshotItems,
                     dispositions: snapshotDispositions,
                     language: language,
-                    installationID: installationID
+                    installationID: installationID,
+                    device: deviceContext
                 )
                 guard let self else { return }
                 self.aiRequestPhase = .finalizing
@@ -364,6 +466,16 @@ final class AppModel: ObservableObject {
                 })
                 self.settings.setAIDescriptions(descriptions, language: language)
                 self.settings.recordAIRecommendation()
+                let planSummary = recommendation.plans.map { plan in
+                    let changed = plan.items.filter { decision in
+                        guard let index = Int(decision.id.replacingOccurrences(of: "item-", with: "")),
+                              snapshotItems.indices.contains(index)
+                        else { return false }
+                        return snapshotDispositions[snapshotItems[index].id] != decision.disposition
+                    }.count
+                    return "\(plan.id):\(changed)"
+                }.joined(separator: ",")
+                Diagnostics.shared.append("AI recommendation received; recommended=\(recommendation.recommendedPlanID); changes=\(planSummary)")
                 self.aiRecommendationMessage = L("Two AI layouts are ready. Review them before applying.")
                 self.isRequestingAIRecommendation = false
                 self.aiRequestPhase = nil
@@ -385,11 +497,14 @@ final class AppModel: ObservableObject {
     var canApplyAIRecommendation: Bool {
         guard let recommendation = aiRecommendation, !isRequestingAIRecommendation, !isApplyingAIRecommendation, !aiRecommendationItems.isEmpty else { return false }
         let snapshotIDs = Set(aiRecommendationItems.map(\.id))
-        return recommendation.plans.contains { plan in
-            Set(plan.items.map { item in
-                guard let index = Int(item.id.replacingOccurrences(of: "item-", with: "")) else { return "" }
-                return aiRecommendationItems.indices.contains(index) ? aiRecommendationItems[index].id : ""
-            }).isSubset(of: snapshotIDs)
+        let currentIDs = Set(currentlyManageableItems.prefix(80).map(\.id))
+        guard currentIDs == snapshotIDs else { return false }
+        return recommendation.plans.allSatisfy { plan in
+            let planIDs = Set(plan.items.compactMap { item -> String? in
+                guard let index = Int(item.id.replacingOccurrences(of: "item-", with: "")) else { return nil }
+                return aiRecommendationItems.indices.contains(index) ? aiRecommendationItems[index].id : nil
+            })
+            return planIDs == snapshotIDs && plan.items.count == snapshotIDs.count
         }
     }
 
@@ -410,19 +525,22 @@ final class AppModel: ObservableObject {
                 aiRecommendationItems.indices.contains(index)
             else { continue }
             let item = aiRecommendationItems[index]
-            guard !item.isProtected, !(item.isOneDrive && settings.oneDriveGuardianEnabled) else { continue }
+            guard !item.isProtected else { continue }
             previous[item.id] = aiBeforeDisposition(for: item)
             if aiBeforeDisposition(for: item) != decision.disposition {
                 queue.append((item, decision.disposition))
             }
-            settings.setDisposition(decision.disposition, for: item.id)
+            settings.setDisposition(decision.disposition, for: item)
             layoutReconciler.reset(item.id)
         }
+        let changedCount = queue.count
         aiUndoPolicies = previous
-        aiApplyQueue = queue
-        aiApplyChangedCount = queue.count
-        aiApplyCompletionMessage = LF("AI layout applied to %d items", queue.count)
-        aiRecommendationMessage = LF("Applying AI layout to %d items…", queue.count)
+        // macOS 27 applies one bundle-set assertion for the complete layout;
+        // running the same assertion once per changed row only adds delay.
+        aiApplyQueue = PlatformVersion.isMacOS27OrNewer ? Array(queue.prefix(1)) : queue
+        aiApplyChangedCount = changedCount
+        aiApplyCompletionMessage = LF("AI layout applied to %d items", changedCount)
+        aiRecommendationMessage = LF("Applying AI layout to %d items…", changedCount)
         objectWillChange.send()
         processNextAIApply()
     }
@@ -439,17 +557,18 @@ final class AppModel: ObservableObject {
         guard let aiUndoPolicies else { return }
         var queue = [(MenuBarItem, ItemDisposition)]()
         for (id, disposition) in aiUndoPolicies {
-            settings.setDisposition(disposition, for: id)
+            let current = aiRecommendationItems.first(where: { $0.id == id }).map { self.disposition(for: $0) }
+            guard let item = aiRecommendationItems.first(where: { $0.id == id }) else { continue }
+            settings.setDisposition(disposition, for: item)
             layoutReconciler.reset(id)
-            if let item = aiRecommendationItems.first(where: { $0.id == id }),
-               aiBeforeDisposition(for: item) != disposition
-            {
+            if current != disposition {
                 queue.append((item, disposition))
             }
         }
+        let changedCount = queue.count
         self.aiUndoPolicies = nil
-        aiApplyQueue = queue
-        aiApplyChangedCount = queue.count
+        aiApplyQueue = PlatformVersion.isMacOS27OrNewer ? Array(queue.prefix(1)) : queue
+        aiApplyChangedCount = changedCount
         aiApplyCompletionMessage = L("Previous menu bar layout restored")
         aiRecommendationMessage = L("Restoring the previous menu bar layout…")
         objectWillChange.send()
@@ -459,6 +578,13 @@ final class AppModel: ObservableObject {
     var canUndoAIRecommendation: Bool { aiUndoPolicies != nil }
 
     private func processNextAIApply() {
+        guard hasAccessibilityPermission else {
+            aiApplyQueue.removeAll()
+            aiApplyChangedCount = 0
+            aiApplyCompletionMessage = ""
+            aiRecommendationMessage = L("The menu bar could not be reached. Check Accessibility permission and try again.")
+            return
+        }
         guard !isMoving else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
                 self?.processNextAIApply()
@@ -476,24 +602,24 @@ final class AppModel: ObservableObject {
         move(next.0, to: next.1, reason: L("AI layout application"), force: true)
     }
 
-    private func scheduleAIReconciliationPasses() {
-        for delay in stride(from: 0.0, through: 30.0, by: 2.5) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.refresh(reason: L("AI layout application"), reconcile: true)
-            }
-        }
-    }
-
     func disposition(for item: MenuBarItem) -> ItemDisposition {
         actualDispositions[item.id] ?? settings.disposition(for: item)
     }
 
-    private func updateActualDispositions() {
+    @discardableResult
+    private func updateActualDispositions() -> Bool {
+        let previous = actualDispositions
+        if PlatformVersion.isMacOS27OrNewer {
+            actualDispositions = Dictionary(uniqueKeysWithValues: items.map {
+                ($0.id, MacOS27VisibilityController.shared.disposition(for: $0))
+            })
+            return actualDispositions != previous
+        }
         guard let boundaryWindowID = statusBar?.boundaryWindowID,
               let boundary = MenuBarDiscovery.statusWindow(id: boundaryWindowID)
         else {
             actualDispositions = [:]
-            return
+            return actualDispositions != previous
         }
         actualDispositions = Dictionary(uniqueKeysWithValues: items.map { item in
             let disposition: ItemDisposition = LayoutReconciler.isInSection(
@@ -503,6 +629,7 @@ final class AppModel: ObservableObject {
             ) ? .hidden : .visible
             return (item.id, disposition)
         })
+        return actualDispositions != previous
     }
 
     func setDockVisibility(_ visible: Bool) {
@@ -512,33 +639,11 @@ final class AppModel: ObservableObject {
         objectWillChange.send()
     }
 
-    func toggleExpanded() {
-        settings.isExpanded.toggle()
-        statusBar?.setExpanded(settings.isExpanded)
-        updateStatusBar()
-        if settings.isExpanded {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                self?.refresh(reason: L("Expand hidden section"), reconcile: false)
-            }
-        }
-        DispatchQueue.main.async { [weak self] in self?.objectWillChange.send() }
-    }
-
-    func toggleGuardian() {
-        settings.oneDriveGuardianEnabled.toggle()
-        updateStatusBar()
-        DispatchQueue.main.async { [weak self] in self?.objectWillChange.send() }
-        if settings.oneDriveGuardianEnabled {
-            repairOneDriveNow()
-        }
-    }
-
-    func repairOneDriveNow() {
-        if let oneDriveItem {
-            move(oneDriveItem, to: .visible, reason: L("Reset OneDrive manually"), force: true)
-        } else {
-            refresh(reason: L("Find OneDrive"), reconcile: true)
-        }
+    func setExternalDisplayMode(_ mode: ExternalDisplayMode) {
+        guard settings.externalDisplayMode != mode else { return }
+        settings.externalDisplayMode = mode
+        applyCurrentDisplayMode(reason: L("Display mode changed"))
+        objectWillChange.send()
     }
 
     func setContinuousMonitor(_ enabled: Bool) {
@@ -581,6 +686,23 @@ final class AppModel: ObservableObject {
 
     private func reconcile(reason: String) {
         guard settings.continuousMonitorEnabled, !isMoving else { return }
+        if PlatformVersion.isMacOS27OrNewer {
+            guard !settings.isExpanded else { return }
+            let succeeded = MacOS27VisibilityController.shared.apply(
+                items: items,
+                settings: settings,
+                showAll: shouldShowAllForCurrentDisplay
+            )
+            Diagnostics.shared.append("macOS 27 reconcile; reason=\(reason); succeeded=\(succeeded)")
+            if updateActualDispositions() {
+                objectWillChange.send()
+            }
+            return
+        }
+        if shouldShowAllForCurrentDisplay {
+            statusBar?.setExpanded(true)
+            return
+        }
         // Never run automatic menu bar moves while the settings UI is active.
         // The user may be clicking or moving the pointer inside Open Notch;
         // explicit row changes call move(... force: true) directly and remain
@@ -594,7 +716,7 @@ final class AppModel: ObservableObject {
         else { return }
 
         if
-            settings.oneDriveGuardianEnabled,
+            settings.disposition(forBundleIdentifier: "com.microsoft.OneDrive") == .visible,
             oneDriveItem == nil,
             isOneDriveRunning,
             !settings.isExpanded,
@@ -608,11 +730,8 @@ final class AppModel: ObservableObject {
 
         var desiredPositions = [String: ItemDisposition]()
         for item in items where !item.isProtected {
-            if settings.policies[item.id] != nil {
+            if settings.hasPolicy(for: item) {
                 desiredPositions[item.id] = settings.disposition(for: item)
-            }
-            if item.isOneDrive, settings.oneDriveGuardianEnabled {
-                desiredPositions[item.id] = .visible
             }
         }
 
@@ -634,12 +753,57 @@ final class AppModel: ObservableObject {
         force: Bool = false,
         collapseAfterSuccess: Bool = false
     ) {
-        guard !isMoving, hasAccessibilityPermission else {
-            Diagnostics.shared.append("Move skipped; item=\(item.displayName); alreadyMoving=\(isMoving); accessibility=\(hasAccessibilityPermission)")
+        guard hasAccessibilityPermission else {
+            Diagnostics.shared.append("Move skipped; item=\(item.displayName); alreadyMoving=\(isMoving); accessibility=false")
+            return
+        }
+        if isMoving {
+            if force {
+                pendingExplicitMoves[item.id] = PendingExplicitMove(
+                    item: item,
+                    disposition: disposition,
+                    reason: reason,
+                    collapseAfterSuccess: collapseAfterSuccess
+                )
+                if !pendingExplicitMoveOrder.contains(item.id) {
+                    pendingExplicitMoveOrder.append(item.id)
+                }
+                Diagnostics.shared.append("Move queued; item=\(item.displayName); target=\(disposition.rawValue)")
+            } else {
+                Diagnostics.shared.append("Move skipped; item=\(item.displayName); alreadyMoving=true; accessibility=true")
+            }
             return
         }
         guard force || canMove(item.id) else {
             Diagnostics.shared.append("Move throttled; item=\(item.displayName)")
+            return
+        }
+        if PlatformVersion.isMacOS27OrNewer {
+            isMoving = true
+            lastMoveByItem[item.id] = .now
+            Diagnostics.shared.append("macOS 27 visibility change started; item=\(item.displayName); bundle=\(item.semanticBundleIdentifier); target=\(disposition.rawValue); reason=\(reason)")
+            let succeeded = MacOS27VisibilityController.shared.apply(
+                items: items,
+                settings: settings,
+                showAll: shouldShowAllForCurrentDisplay
+            )
+            isMoving = false
+            if succeeded {
+                failedMoveUntil[item.id] = nil
+                if collapseAfterSuccess { collapseHiddenSection() }
+            } else {
+                failedMoveUntil[item.id] = .now.addingTimeInterval(30)
+                addEvent(LF("Could not move %@. Check Accessibility permission.", item.displayName))
+            }
+            updateActualDispositions()
+            objectWillChange.send()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                guard let self else { return }
+                self.refresh(reason: L("Post-move verification"), reconcile: false)
+                if !self.aiApplyQueue.isEmpty || self.aiApplyChangedCount > 0 {
+                    self.processNextAIApply()
+                }
+            }
             return
         }
         guard let boundaryWindowID = statusBar?.boundaryWindowID,
@@ -659,7 +823,9 @@ final class AppModel: ObservableObject {
                 addEvent(L("OneDrive is already pinned"))
             }
             Diagnostics.shared.append("Move unnecessary; item=\(item.displayName); already=\(disposition.rawValue)")
-            if !aiApplyQueue.isEmpty {
+            if processNextPendingExplicitMove() {
+                return
+            } else if !aiApplyQueue.isEmpty {
                 processNextAIApply()
             }
             return
@@ -688,7 +854,6 @@ final class AppModel: ObservableObject {
                 }
                 Diagnostics.shared.append("Move finished; item=\(item.displayName); result=\(resultName); elapsed=\(String(format: "%.3f", Date.now.timeIntervalSince(moveStartedAt)))s")
                 if result.succeeded, item.isOneDrive {
-                    self.settings.repairCount += 1
                     self.addEvent(LF("OneDrive automatically restored · %@", reason))
                 }
                 if result.succeeded {
@@ -710,7 +875,9 @@ final class AppModel: ObservableObject {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
                     guard let self else { return }
                     self.refresh(reason: L("Post-move verification"), reconcile: false)
-                    if !self.aiApplyQueue.isEmpty {
+                    if self.processNextPendingExplicitMove() {
+                        return
+                    } else if !self.aiApplyQueue.isEmpty {
                         self.processNextAIApply()
                     } else if self.aiApplyChangedCount > 0 {
                         self.processNextAIApply()
@@ -718,6 +885,29 @@ final class AppModel: ObservableObject {
                 }
             }
         }
+    }
+
+    @discardableResult
+    private func processNextPendingExplicitMove() -> Bool {
+        guard !isMoving else { return false }
+        while let id = pendingExplicitMoveOrder.first {
+            pendingExplicitMoveOrder.removeFirst()
+            guard let pending = pendingExplicitMoves.removeValue(forKey: id) else { continue }
+            let current = items.first(where: { $0.id == id })
+                ?? items.first(where: {
+                    $0.semanticBundleIdentifier == pending.item.semanticBundleIdentifier
+                })
+                ?? pending.item
+            move(
+                current,
+                to: pending.disposition,
+                reason: pending.reason,
+                force: true,
+                collapseAfterSuccess: pending.collapseAfterSuccess
+            )
+            return true
+        }
+        return false
     }
 
     private func canMove(_ id: String) -> Bool {
@@ -733,6 +923,67 @@ final class AppModel: ObservableObject {
 
     private var isOneDriveRunning: Bool {
         NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.microsoft.OneDrive" }
+    }
+
+    var hasExternalDisplay: Bool {
+        NSScreen.screens.contains { screen in
+            guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+                return false
+            }
+            return CGDisplayIsBuiltin(CGDirectDisplayID(number.uint32Value)) == 0
+        }
+    }
+
+    var mainDisplayIsExternal: Bool {
+        CGDisplayIsBuiltin(CGMainDisplayID()) == 0
+    }
+
+    private var shouldShowAllForCurrentDisplay: Bool {
+        settings.externalDisplayMode == .showAll && mainDisplayIsExternal
+    }
+
+    private func applyCurrentDisplayMode(reason: String) {
+        Diagnostics.shared.append(
+            "Display mode applied; reason=\(reason); externalConnected=\(hasExternalDisplay); " +
+            "mainExternal=\(mainDisplayIsExternal); mode=\(settings.externalDisplayMode.rawValue)"
+        )
+        if PlatformVersion.isMacOS27OrNewer {
+            guard !settings.isExpanded else { return }
+            _ = MacOS27VisibilityController.shared.apply(
+                items: items,
+                settings: settings,
+                showAll: shouldShowAllForCurrentDisplay
+            )
+            updateActualDispositions()
+        } else {
+            statusBar?.setExpanded(settings.isExpanded || shouldShowAllForCurrentDisplay)
+        }
+    }
+
+    private func showHiddenItemsPopover() {
+        let runningBundles = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        let hidden = managedItems.filter {
+            (isItemCurrentlyAvailable($0) || runningBundles.contains($0.semanticBundleIdentifier))
+                && settings.disposition(for: $0) == .hidden
+        }
+        Diagnostics.shared.append(
+            "Hidden-items bar requested; currentItems=\(items.count); configuredHidden=\(hidden.count); " +
+            "actualHidden=\(hiddenItems.count)"
+        )
+        statusBar?.showHiddenItems(
+            hidden,
+            activate: { [weak self] item in self?.activateMenuBarItem(item) },
+            manage: { [weak self] in self?.openSettingsAction?() }
+        )
+    }
+
+    private func activateMenuBarItem(_ item: MenuBarItem) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let pressed = AccessibilityResolver.press(item)
+            if !pressed, let app = NSRunningApplication(processIdentifier: item.hostPID) {
+                DispatchQueue.main.async { app.activate(options: []) }
+            }
+        }
     }
 
     private var canRebindIdentity: Bool {
@@ -784,17 +1035,12 @@ final class AppModel: ObservableObject {
             restored.map { ($0.windowID, $0) },
             uniquingKeysWith: { current, _ in current }
         )
-        items = restored.sorted { lhs, rhs in
-            if lhs.isOneDrive != rhs.isOneDrive { return lhs.isOneDrive }
-            return lhs.frame.minX < rhs.frame.minX
-        }
+        items = restored.sorted { $0.frame.minX < $1.frame.minX }
     }
 
     private func updateStatusBar() {
         statusBar?.setExpanded(settings.isExpanded)
         statusBar?.updateMenu(
-            isExpanded: settings.isExpanded,
-            guardianEnabled: settings.oneDriveGuardianEnabled,
             hasAccessibilityPermission: hasAccessibilityPermission
         )
     }
@@ -833,15 +1079,30 @@ final class AppModel: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.recheckAccessibilityPermission() }
         })
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.statusBar?.closeHiddenItemsBar()
+                self?.applyCurrentDisplayMode(reason: L("Display configuration changed"))
+                self?.refresh(reason: L("Display configuration changed"), reconcile: true)
+            }
+        })
     }
 
     private func schedulePermissionChecks() {
+        permissionCheckToken = UUID()
+        let token = permissionCheckToken
         for delay in [1.0, 3.0, 6.0, 10.0] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self else { return }
+                guard self.permissionCheckToken == token else { return }
                 self.hasAccessibilityPermission = AccessibilityResolver.isTrusted()
                 self.updateStatusBar()
                 if self.hasAccessibilityPermission {
+                    self.permissionCheckToken = UUID()
                     if
                         !self.settings.isExpanded,
                         self.itemsByWindowID.isEmpty,

@@ -7,12 +7,19 @@ STAGE="$(mktemp -d /tmp/OpenNotch-build.XXXXXX)"
 APP="$STAGE/Open Notch.app"
 OUTPUT_APP="$BUILD/Open Notch.app"
 OUTPUT_ZIP="$BUILD/Open Notch.zip"
+OUTPUT_DMG="$BUILD/Open Notch 0.7.2.dmg"
 ICONSET="$STAGE/AppIcon.iconset"
 BASE_ICON="$STAGE/AppIcon-1024.png"
+DMG_STAGE="$STAGE/dmg"
 trap 'rm -rf "$STAGE"' EXIT
 
-rm -rf "$OUTPUT_APP" "$OUTPUT_ZIP"
+rm -rf "$OUTPUT_APP" "$OUTPUT_ZIP" "$OUTPUT_DMG" "$DMG_STAGE"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$ICONSET"
+
+clang -fobjc-arc -fblocks \
+  -mmacosx-version-min=14.0 \
+  -c "$ROOT/Sources/MacOS27VisibilityBridge.m" \
+  -o "$STAGE/MacOS27VisibilityBridge.o"
 
 swift "$ROOT/Tools/make_icon.swift" "$BASE_ICON"
 
@@ -48,7 +55,9 @@ swiftc \
   -framework CoreGraphics \
   -framework ServiceManagement \
   -framework SwiftUI \
+  -import-objc-header "$ROOT/Sources/MacOS27VisibilityBridge.h" \
   "$ROOT"/Sources/*.swift \
+  "$STAGE/MacOS27VisibilityBridge.o" \
   -o "$APP/Contents/MacOS/OpenNotch"
 
 cp "$ROOT/Info.plist" "$APP/Contents/Info.plist"
@@ -56,7 +65,7 @@ cp "$STAGE/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"
 cp "$ROOT/NOTICE.md" "$APP/Contents/Resources/NOTICE.md"
 for localization in "$ROOT"/Resources/*.lproj; do
-  cp -R "$localization" "$APP/Contents/Resources/"
+  ditto --norsrc --noextattr "$localization" "$APP/Contents/Resources/${localization:t}"
 done
 xattr -cr "$APP"
 codesign \
@@ -70,5 +79,23 @@ codesign --verify --deep --strict "$APP"
 ditto -c -k --norsrc --noextattr --keepParent "$APP" "$STAGE/Open Notch.zip"
 ditto --norsrc --noextattr "$APP" "$OUTPUT_APP"
 ditto --norsrc --noextattr "$STAGE/Open Notch.zip" "$OUTPUT_ZIP"
+
+# Some synced/file-provider workspaces attach FinderInfo or provenance xattrs
+# to the convenient unpacked copy immediately after it is created. Strip what
+# is present; the signed distribution ZIP above is produced from the clean,
+# strictly verified staging bundle and remains the canonical artifact.
+xattr -cr "$OUTPUT_APP"
+
+# Build a friend-shareable disk image from the already verified staging app.
+# Keep the app and an Applications alias in the image so Finder presents the
+# standard drag-to-install flow without changing the signed bundle.
+mkdir -p "$DMG_STAGE"
+ditto --norsrc --noextattr "$APP" "$DMG_STAGE/Open Notch.app"
+ln -s /Applications "$DMG_STAGE/Applications"
+diskutil image create from \
+  --volumeName "Open Notch" \
+  --format UDZO \
+  "$DMG_STAGE" \
+  "$OUTPUT_DMG" >/dev/null
 
 echo "$OUTPUT_APP"
