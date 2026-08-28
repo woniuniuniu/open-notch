@@ -52,12 +52,13 @@ final class HiddenItemsBarView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
 
-        let glassFrame = bounds.insetBy(dx: 7, dy: 7)
+        let glassFrame = bounds.insetBy(dx: 3, dy: 3)
         let glass = NSVisualEffectView(frame: glassFrame)
         glass.autoresizingMask = [.width, .height]
-        glass.material = .hudWindow
+        glass.material = .menu
         glass.blendingMode = .behindWindow
         glass.state = .active
+        glass.alphaValue = 0.84
         glass.wantsLayer = true
         glass.layer?.cornerRadius = glassFrame.height / 2
         glass.layer?.masksToBounds = true
@@ -65,9 +66,9 @@ final class HiddenItemsBarView: NSView {
         glass.layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
         addSubview(glass)
 
-        let manageSize: CGFloat = 31
+        let manageSize: CGFloat = 24
         let manageFrame = NSRect(
-            x: glass.bounds.maxX - manageSize - 8,
+            x: glass.bounds.maxX - manageSize - 5,
             y: (glass.bounds.height - manageSize) / 2,
             width: manageSize,
             height: manageSize
@@ -83,9 +84,9 @@ final class HiddenItemsBarView: NSView {
 
         let separator = NSView(frame: NSRect(
             x: manageFrame.minX - 7,
-            y: 13,
+            y: 8,
             width: 1,
-            height: glass.bounds.height - 26
+            height: glass.bounds.height - 16
         ))
         separator.autoresizingMask = [.minXMargin]
         separator.wantsLayer = true
@@ -93,10 +94,10 @@ final class HiddenItemsBarView: NSView {
         glass.addSubview(separator)
 
         let scrollFrame = NSRect(
-            x: 8,
-            y: 4,
-            width: max(1, separator.frame.minX - 14),
-            height: glass.bounds.height - 8
+            x: 5,
+            y: 2,
+            width: max(1, separator.frame.minX - 9),
+            height: glass.bounds.height - 4
         )
         let scroll = NSScrollView(frame: scrollFrame)
         scroll.autoresizingMask = [.width, .height]
@@ -107,7 +108,7 @@ final class HiddenItemsBarView: NSView {
         scroll.verticalScrollElasticity = .none
         glass.addSubview(scroll)
 
-        let itemWidth: CGFloat = 42
+        let itemWidth: CGFloat = 30
         let documentWidth = max(scrollFrame.width, CGFloat(items.count) * itemWidth)
         let document = NSView(frame: NSRect(x: 0, y: 0, width: documentWidth, height: scrollFrame.height))
         document.wantsLayer = true
@@ -126,7 +127,7 @@ final class HiddenItemsBarView: NSView {
                 let icon = ApplicationIconResolver.shared.statusBarSymbol(for: item)
                     ?? NSImage(systemSymbolName: "circle.dashed", accessibilityDescription: item.displayName)
                 let button = makeButton(
-                    frame: NSRect(x: CGFloat(index) * itemWidth + 2, y: 2, width: 37, height: 37),
+                    frame: NSRect(x: CGFloat(index) * itemWidth + 1, y: 1, width: 28, height: 28),
                     image: icon,
                     label: item.displayName,
                     action: { activate(item) }

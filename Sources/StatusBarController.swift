@@ -167,11 +167,11 @@ final class StatusBarController: NSObject {
                 self?.closeHiddenItemsBar()
                 manage()
             }
-        let naturalWidth = CGFloat(items.count * 42 + 66)
+        let naturalWidth = CGFloat(items.count * 30 + 50)
         let availableWidth = max(220, (button.window?.screen?.visibleFrame.width ?? 700) - 40)
         let size = NSSize(
-            width: min(max(items.isEmpty ? 190 : naturalWidth, 116), min(680, availableWidth)),
-            height: 62
+            width: min(max(items.isEmpty ? 132 : naturalWidth, 102), min(560, availableWidth)),
+            height: 42
         )
         guard let anchorWindow = button.window, let screen = anchorWindow.screen else { return }
 

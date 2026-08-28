@@ -5,7 +5,7 @@ Language: [简体中文](README.md) | English
 [![macOS](https://img.shields.io/badge/macOS-14%2B-111111?logo=apple)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5-FA7343?logo=swift&logoColor=white)](https://www.swift.org/)
 [![License](https://img.shields.io/badge/license-GPL--3.0-only-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.7.3-2ea44f)](https://github.com/woniuniuniu/open-notch)
+[![Version](https://img.shields.io/badge/version-0.7.4-2ea44f)](https://github.com/woniuniuniu/open-notch)
 
 **Take control of your Mac menu bar. Fully open source, native, and ready for macOS 27.**
 
@@ -92,7 +92,7 @@ cd open-notch
 ./build.sh
 ```
 
-The script creates `build/Open Notch.app`, `build/Open Notch.zip`, and a friend-shareable `build/Open Notch 0.7.3.dmg`. Move the app to `/Applications`, launch it, grant Accessibility access in System Settings, and click **Recheck** on the General page.
+The script creates `build/Open Notch.app`, `build/Open Notch.zip`, and a friend-shareable `build/Open Notch 0.7.4.dmg`. Move the app to `/Applications`, launch it, grant Accessibility access in System Settings, and click **Recheck** on the General page.
 
 The local build is ad-hoc signed for development and personal testing. Distribution to other users requires your own Developer ID signature and Apple notarization.
 

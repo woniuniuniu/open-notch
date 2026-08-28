@@ -47,12 +47,17 @@ final class ApplicationIconResolver {
         return copy
     }
 
-    /// Produces a monochrome glyph for surfaces that visually extend the menu
-    /// bar. Dock icons remain useful in settings, but do not belong in a row of
-    /// status items and cannot follow the menu bar's light/dark appearance.
+    /// Returns the closest honest representation for a hidden menu item.
+    ///
+    /// macOS does not expose third-party menu-extra images through the
+    /// accessibility tree. Guessing a glyph from an app name is misleading
+    /// (and particularly noticeable in the compact hidden bar), so only
+    /// symbols that come from a known Apple menu extra are used here. For a
+    /// third-party item, the app's own icon is the stable identity we can
+    /// actually verify.
     func statusBarSymbol(for item: MenuBarItem) -> NSImage? {
-        if let symbolName = statusBarSymbolName(for: item) {
-            let configuration = NSImage.SymbolConfiguration(pointSize: 17, weight: .medium)
+        if isTrustedSystemItem(item), let symbolName = statusBarSymbolName(for: item) {
+            let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
             if let image = NSImage(
                 systemSymbolName: symbolName,
                 accessibilityDescription: item.displayName
@@ -67,45 +72,24 @@ final class ApplicationIconResolver {
         // treating an opaque AppIcon as a template produces a solid square.
         if let applicationIcon = icon(for: item) {
             let copy = applicationIcon.copy() as? NSImage ?? applicationIcon
-            copy.size = NSSize(width: 18, height: 18)
+            copy.size = NSSize(width: 15, height: 15)
             copy.isTemplate = false
             return copy
         }
 
-        let fallback = NSImage(
-            systemSymbolName: "circle.dashed",
-            accessibilityDescription: item.displayName
-        )
+        let fallback = NSImage(systemSymbolName: "app.dashed", accessibilityDescription: item.displayName)
         fallback?.isTemplate = true
         return fallback
     }
 
     private func statusBarSymbolName(for item: MenuBarItem) -> String? {
-        if item.symbolName != "app.dashed" { return item.symbolName }
+        guard item.symbolName != "app.dashed" else { return nil }
+        return item.symbolName
+    }
 
-        let identity = "\(item.semanticBundleIdentifier) \(item.displayName)".lowercased()
-        let mappings: [(tokens: [String], symbol: String)] = [
-            (["cleanshot"], "camera.viewfinder"),
-            (["chatgpt", "openai"], "sparkles"),
-            (["onedrive", "dropbox", "云盘", "cloud"], "cloud.fill"),
-            (["wechat", "微信"], "message.fill"),
-            (["surge", "vpn", "network", "cc switch"], "network"),
-            (["typeless", "dictation", "audio"], "waveform"),
-            (["paste", "clipboard"], "clipboard.fill"),
-            (["setapp"], "square.grid.2x2.fill"),
-            (["yoink", "dropover", "shelf"], "tray.full.fill"),
-            (["parall", "wallpaper"], "photo.fill"),
-            (["uu", "remote", "远程"], "cursorarrow.motionlines"),
-            (["lungo", "caffeine", "amphetamine"], "cup.and.saucer.fill"),
-            (["raycast", "alfred", "launcher"], "command"),
-            (["istat", "stats", "monitor"], "chart.xyaxis.line"),
-            (["battery", "aldente"], "battery.75percent"),
-            (["input", "keyboard", "输入法"], "keyboard"),
-            (["screenshot", "capture", "截图"], "camera.fill"),
-        ]
-        return mappings.first { mapping in
-            mapping.tokens.contains { identity.contains($0) }
-        }?.symbol
+    private func isTrustedSystemItem(_ item: MenuBarItem) -> Bool {
+        item.semanticBundleIdentifier.hasPrefix("com.apple.")
+            || item.semanticIdentifier.hasPrefix("com.apple.")
     }
 
     func applicationName(for bundleIdentifier: String, fallback: String) -> String {
