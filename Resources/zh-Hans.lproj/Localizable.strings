@@ -12,7 +12,6 @@
 "Battery" = "电池";
 "Bundle Identifier" = "应用标识";
 "Clock" = "时钟";
-"Clear Search" = "清除筛选";
 "Collapse" = "收起";
 "Collapse Hidden Items" = "收起隐藏图标";
 "Collapsed" = "已收起";
@@ -28,7 +27,6 @@
 "Expand hidden section" = "展开隐藏区";
 "Expanded" = "已展开";
 "Find OneDrive" = "查找 OneDrive";
-"Filter scanned items" = "筛选已扫描图标";
 "First upgrade: identifying menu bar items" = "首次升级，正在绑定菜单栏图标";
 "Focus" = "专注模式";
 "General" = "通用";
@@ -57,7 +55,6 @@
 "Menu Bar Items" = "菜单栏图标";
 "Minimum System" = "最低系统";
 "No manageable items" = "没有可管理的图标";
-"No matching items" = "没有匹配的图标";
 "Not Authorized" = "未授权";
 "Not Found" = "未发现";
 "Off" = "关闭";
@@ -98,7 +95,6 @@
 "Recent Activity" = "最近活动";
 "Recent Events" = "最近记录";
 "Recheck" = "重新检查";
-"Rescan" = "重新扫描";
 "Reset Now" = "立即复位";
 "Reset OneDrive manually" = "手动复位 OneDrive";
 "Restart Open Notch" = "重新启动若栏";

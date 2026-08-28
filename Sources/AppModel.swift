@@ -20,7 +20,6 @@ final class AppModel: ObservableObject {
     @Published var selectedPane: SettingsPane? = .menuItems {
         didSet { refreshMenuItemSections() }
     }
-    @Published var searchText = ""
     @Published private(set) var draggedMenuItemID: String?
     @Published private(set) var menuItemDropTargetID: String?
     @Published private(set) var menuItemDropAfterTarget = false
@@ -127,12 +126,7 @@ final class AppModel: ObservableObject {
     }
 
     var filteredItems: [MenuBarItem] {
-        items.filter { item in
-            guard !item.isProtected else { return false }
-            return searchText.isEmpty
-                || item.displayName.localizedCaseInsensitiveContains(searchText)
-                || item.detail.localizedCaseInsensitiveContains(searchText)
-        }
+        items.filter { !$0.isProtected }
     }
 
     var filteredVisibleItems: [MenuBarItem] {
@@ -1099,7 +1093,6 @@ final class AppModel: ObservableObject {
         guard settings.language != language else { return }
         settings.language = language
         guardianEvents.removeAll()
-        searchText = ""
         updateStatusBar()
         refresh(reason: L("Language changed"), reconcile: false)
         objectWillChange.send()

@@ -599,55 +599,14 @@ private struct MenuItemsPane: View {
             if !model.canManageMenuBar {
                 PermissionBanner()
             } else {
-                HStack(spacing: 9) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(.secondary)
-                        TextField(L("Filter scanned items"), text: $model.searchText)
-                            .textFieldStyle(.plain)
-                    }
-                    .padding(.horizontal, 11)
-                    .frame(height: 34)
-                    .background(.thinMaterial)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous)
-                            .stroke(.separator.opacity(0.55), lineWidth: 1)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
-
-                    Button {
-                        model.refresh(reason: L("Manual scan"), reconcile: false)
-                    } label: {
-                        if model.isScanning {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                    }
-                    .frame(width: 34, height: 34)
-                    .systemGlassButton()
-                    .help(L("Rescan"))
-                }
-
                 if model.items.filter({ !$0.isProtected }).isEmpty {
                     GlassPanel {
                         VStack(spacing: 10) {
                             ContentUnavailableView(L("No manageable items"), systemImage: "menubar.rectangle")
                             Button(L("Scan Now")) {
-                                model.searchText = ""
                                 model.refresh(reason: L("Manual scan"), reconcile: false)
                             }
                             .systemGlassButton(prominent: true)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 180)
-                    }
-                } else if model.filteredItems.isEmpty {
-                    GlassPanel {
-                        VStack(spacing: 10) {
-                            ContentUnavailableView(L("No matching items"), systemImage: "magnifyingglass")
-                            Button(L("Clear Search")) { model.searchText = "" }
-                                .systemGlassButton()
                         }
                         .frame(maxWidth: .infinity, minHeight: 180)
                     }
