@@ -49,6 +49,16 @@ distributed under GPL-3.0-only.
 Bartender is proprietary software and is referenced only as product inspiration.
 No Bartender source code or proprietary asset is included in this repository.
 
+## Project contributors
+
+The macOS 27 MenuBarAgent compatibility work was contributed by
+[Joshua2046c](https://github.com/Joshua2046c). The contributor's original
+commits are preserved in the repository history. Some of those commits were
+created with a local author email that GitHub cannot associate with the
+account; the GitHub profile will be credited automatically for future commits
+only when the author uses an email verified on that account (or a GitHub
+`users.noreply.github.com` address).
+
 ## macOS 27 MenuBarAgent compatibility
 
 The macOS 27 Accessibility inventory and MenuBarAgent compatibility path in

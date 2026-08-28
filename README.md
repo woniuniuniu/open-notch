@@ -172,4 +172,9 @@ Bartender 是专有软件；它只是产品方向上的灵感来源，Open Notch
 
 欢迎提交 issue、改进建议和 pull request。请先阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md)、[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) 和 [`NOTICE.md`](NOTICE.md)。
 
+本次 macOS 27 菜单栏兼容工作的重要贡献者：
+
+- [Joshua2046c](https://github.com/Joshua2046c)：MenuBarAgent 发现、隐藏、排序和设置交互修复。
+- 小红书@李山迎 Joshua：中文本地化贡献。
+
 项目地址：https://github.com/woniuniuniu/open-notch
