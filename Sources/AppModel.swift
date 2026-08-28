@@ -21,10 +21,14 @@ final class AppModel: ObservableObject {
         didSet { refreshMenuItemSections() }
     }
     @Published var searchText = ""
-    @Published var draggedMenuItemID: String?
+    @Published private(set) var draggedMenuItemID: String?
+    @Published private(set) var menuItemDropTargetID: String?
+    @Published private(set) var menuItemDropAfterTarget = false
+    @Published private(set) var menuItemDragOffset: CGSize = .zero
     @Published private(set) var externalDisplayConnected = false
     @Published private(set) var externalDisplayIsPrimary = false
     private var sectionDispositions = [String: ItemDisposition]()
+    private var visualMenuItemOrder: [String: Int]?
 
     let settings = SettingsStore.shared
 
@@ -34,6 +38,8 @@ final class AppModel: ObservableObject {
     private var isStopping = false
     private var isMoving = false
     private var isReordering = false
+    private var menuItemDragGeneration = 0
+    private var menuItemRowFrames = [String: CGRect]()
     private var pendingRefresh: (reason: String, reconcile: Bool)?
     private var itemsByWindowID = [CGWindowID: MenuBarItem]()
     // Computed once per discovery pass; never query CoreGraphics from a SwiftUI row.
@@ -133,7 +139,13 @@ final class AppModel: ObservableObject {
         filteredItems.filter {
             sectionDisposition(for: $0) == .visible
                 && ($0.frame.width > 1 || $0.isOpenNotchControl)
-        }.sorted { $0.frame.minX < $1.frame.minX }
+        }.sorted { lhs, rhs in
+            if let lhsIndex = visualMenuItemOrder?[lhs.id],
+               let rhsIndex = visualMenuItemOrder?[rhs.id] {
+                return lhsIndex < rhsIndex
+            }
+            return lhs.frame.minX < rhs.frame.minX
+        }
     }
 
     var filteredHiddenItems: [MenuBarItem] {
@@ -293,6 +305,10 @@ final class AppModel: ObservableObject {
         guard let adjustedTargetIndex = proposedOrder.firstIndex(of: targetID) else { return }
         proposedOrder.insert(sourceID, at: adjustedTargetIndex + (placeAfterTarget ? 1 : 0))
         guard proposedOrder != physicalItems.map(\.id) else { return }
+        visualMenuItemOrder = Dictionary(
+            uniqueKeysWithValues: proposedOrder.enumerated().map { ($0.element, $0.offset) }
+        )
+        objectWillChange.send()
         isReordering = true
 
         // Our AppKit status item does not appear in MenuBarAgent's persisted
@@ -307,6 +323,7 @@ final class AppModel: ObservableObject {
             }
             Diagnostics.shared.append("Open Notch menu item reorder saved=\(moved); inputSynthesis=false")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.visualMenuItemOrder = nil
                 self?.isReordering = false
                 self?.refresh(reason: L("Manual reorder"), reconcile: false)
             }
@@ -326,6 +343,7 @@ final class AppModel: ObservableObject {
                 "inputSynthesis=false"
             )
             addEvent(L("Could not reorder menu bar item"))
+            visualMenuItemOrder = nil
             isReordering = false
             return
         }
@@ -342,6 +360,7 @@ final class AppModel: ObservableObject {
             guard let liveSource = live.first(where: { $0.id == source.id }),
                   let liveTarget = live.first(where: { $0.id == target.id })
             else {
+                self.visualMenuItemOrder = nil
                 self.isReordering = false
                 return
             }
@@ -350,6 +369,7 @@ final class AppModel: ObservableObject {
                 : liveSource.frame.minX < liveTarget.frame.minX
             guard !applied else {
                 self.items = live
+                self.visualMenuItemOrder = nil
                 Diagnostics.shared.append("Menu bar reorder verified from live AX geometry")
                 self.isReordering = false
                 return
@@ -370,9 +390,93 @@ final class AppModel: ObservableObject {
             if case .failed = result { self.addEvent(L("Could not reorder menu bar item")) }
             self.isReordering = false
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.visualMenuItemOrder = nil
                 self?.refresh(reason: L("Manual reorder"), reconcile: false)
             }
         }
+    }
+
+    func beginMenuItemDrag(_ id: String) {
+        menuItemDragGeneration += 1
+        let generation = menuItemDragGeneration
+        draggedMenuItemID = id
+        menuItemDropTargetID = nil
+        menuItemDropAfterTarget = false
+        menuItemDragOffset = .zero
+        Diagnostics.shared.append("Menu item drag started; source=\(id)")
+
+        // A drag released outside the list may not produce a useful target.
+        // Release the scan hold automatically so a cancelled drag can never
+        // pause discovery indefinitely.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self,
+                  self.menuItemDragGeneration == generation,
+                  self.draggedMenuItemID == id,
+                  !self.isReordering
+            else { return }
+            self.clearMenuItemDrag()
+            Diagnostics.shared.append("Menu item drag expired without a drop; source=\(id)")
+            self.refresh(reason: L("Manual reorder"), reconcile: false)
+        }
+    }
+
+    func updateMenuItemRowFrames(_ frames: [String: CGRect]) {
+        menuItemRowFrames = frames
+    }
+
+    func updateMenuItemDrag(at location: CGPoint, translation: CGSize) {
+        guard let sourceID = draggedMenuItemID else { return }
+        menuItemDragOffset = translation
+
+        let candidates = menuItemRowFrames.filter { $0.key != sourceID }
+        guard !candidates.isEmpty else {
+            menuItemDropTargetID = nil
+            return
+        }
+        let listBounds = candidates.values.reduce(CGRect.null) { $0.union($1) }
+            .insetBy(dx: -48, dy: -22)
+        guard listBounds.contains(location),
+              let candidate = candidates.min(by: {
+                  abs($0.value.midY - location.y) < abs($1.value.midY - location.y)
+              })
+        else {
+            menuItemDropTargetID = nil
+            return
+        }
+
+        let placeAfter = location.y >= candidate.value.midY
+        if menuItemDropTargetID != candidate.key || menuItemDropAfterTarget != placeAfter {
+            menuItemDropTargetID = candidate.key
+            menuItemDropAfterTarget = placeAfter
+        }
+    }
+
+    func finishMenuItemDrag() {
+        guard let sourceID = draggedMenuItemID else { return }
+        let targetID = menuItemDropTargetID
+        let placeAfterTarget = menuItemDropAfterTarget
+        menuItemDragGeneration += 1
+        clearMenuItemDrag()
+
+        guard let targetID, sourceID != targetID else {
+            refresh(reason: L("Manual reorder"), reconcile: false)
+            return
+        }
+        Diagnostics.shared.append(
+            "Menu item drop accepted; source=\(sourceID); target=\(targetID); placeAfter=\(placeAfterTarget)"
+        )
+        reorderMenuBarItem(
+            sourceID: sourceID,
+            targetID: targetID,
+            placeAfterTarget: placeAfterTarget
+        )
+    }
+
+    private func clearMenuItemDrag() {
+        draggedMenuItemID = nil
+        menuItemDropTargetID = nil
+        menuItemDropAfterTarget = false
+        menuItemDragOffset = .zero
     }
 
     func moveMenuBarItem(_ id: String, offset: Int) {
@@ -442,6 +546,10 @@ final class AppModel: ObservableObject {
 
     func refresh(reason: String = L("Scan"), reconcile: Bool = false) {
         guard !isStopping else { return }
+        guard draggedMenuItemID == nil else {
+            Diagnostics.shared.append("Scan deferred while a menu item drag is active; reason=\(reason)")
+            return
+        }
         guard !isRequestingAIRecommendation else {
             if pendingRefresh == nil || reconcile {
                 pendingRefresh = (reason, reconcile)
@@ -473,6 +581,14 @@ final class AppModel: ObservableObject {
                 guard let self else { return }
                 guard !self.isStopping else {
                     self.isScanning = false
+                    return
+                }
+                guard self.draggedMenuItemID == nil else {
+                    self.isScanning = false
+                    if self.pendingRefresh == nil || reconcile {
+                        self.pendingRefresh = (reason, reconcile)
+                    }
+                    Diagnostics.shared.append("Scan result deferred while a menu item drag is active; reason=\(reason)")
                     return
                 }
                 var resolvedItems = scanned

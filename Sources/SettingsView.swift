@@ -1,7 +1,6 @@
 import AppKit
 import ServiceManagement
 import SwiftUI
-import UniformTypeIdentifiers
 
 private enum OpenNotchTheme {
     // macOS 27 uses noticeably softer, more continuous container geometry.
@@ -668,6 +667,9 @@ private struct MenuItemsPane: View {
                                         }
                                     }
                                 }
+                                .onPreferenceChange(MenuItemRowFramePreferenceKey.self) {
+                                    model.updateMenuItemRowFrames($0)
+                                }
                             }
                         }
                     }
@@ -738,37 +740,43 @@ private enum MenuDropInsertion: Equatable {
     case after
 }
 
+private struct MenuItemRowFramePreferenceKey: PreferenceKey {
+    static var defaultValue = [String: CGRect]()
+
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
+    }
+}
+
 private struct MenuItemRow: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var settings = SettingsStore.shared
     @State private var isHovering = false
-    @State private var dropInsertion: MenuDropInsertion?
     let item: MenuBarItem
     let allowsReordering: Bool
+
+    private var dropInsertion: MenuDropInsertion? {
+        guard model.draggedMenuItemID != item.id,
+              model.menuItemDropTargetID == item.id
+        else { return nil }
+        return model.menuItemDropAfterTarget ? .after : .before
+    }
 
     var body: some View {
         HStack(spacing: 11) {
             if MenuBarAgentBridge.isAvailable && allowsReordering {
-                HStack(spacing: 0) {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 22, height: 40)
-                        .contentShape(Rectangle())
-                        .help(L("Drag to reorder"))
-                        .accessibilityLabel(L("Drag to reorder"))
-
-                    VStack(spacing: 0) {
-                        reorderButton("chevron.up", offset: -1, help: L("Move Up"))
-                        reorderButton("chevron.down", offset: 1, help: L("Move Down"))
-                    }
-                }
-                .frame(width: 48, height: 52)
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 34, height: 52)
+                    .contentShape(Rectangle())
+                    .help(L("Drag to reorder"))
+                    .accessibilityLabel(L("Drag to reorder"))
             }
 
             MenuItemIcon(item: item)
-                .frame(width: 28, height: 28)
+                .frame(width: 30, height: 30)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -800,9 +808,17 @@ private struct MenuItemRow: View {
         }
         .padding(.horizontal, 7)
         .frame(height: 60)
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: MenuItemRowFramePreferenceKey.self,
+                    value: allowsReordering ? [item.id: proxy.frame(in: .global)] : [:]
+                )
+            }
+        }
         // Move the entire neighbouring row out of the way, matching native
         // macOS list reordering instead of highlighting a row as a target.
-        .offset(y: dropInsertion == .before ? 7 : dropInsertion == .after ? -7 : 0)
+        .offset(y: rowOffset)
         .padding(.top, dropInsertion == .before ? 14 : 0)
         .padding(.bottom, dropInsertion == .after ? 14 : 0)
         .background(isHovering && dropInsertion == nil ? OpenNotchTheme.hoverFill(for: colorScheme) : .clear)
@@ -823,19 +839,25 @@ private struct MenuItemRow: View {
             }
         }
         .animation(.spring(response: 0.28, dampingFraction: 0.74), value: dropInsertion)
+        .animation(.interactiveSpring(response: 0.24, dampingFraction: 0.82), value: model.menuItemDragOffset)
+        .zIndex(model.draggedMenuItemID == item.id ? 10 : 0)
+        .opacity(model.draggedMenuItemID == item.id ? 0.92 : 1)
+        .shadow(
+            color: model.draggedMenuItemID == item.id ? .black.opacity(0.2) : .clear,
+            radius: 10,
+            y: 5
+        )
         .contentShape(Rectangle())
         .modifier(MenuRowDragModifier(enabled: MenuBarAgentBridge.isAvailable && allowsReordering, item: item))
         .onHover { isHovering = $0 }
-        .onDrop(
-            of: [UTType.text],
-            delegate: MenuItemDropDelegate(
-                model: model,
-                target: item,
-                enabled: MenuBarAgentBridge.isAvailable && allowsReordering,
-                insertion: $dropInsertion
-            )
-        )
         .accessibilityElement(children: .contain)
+    }
+
+    private var rowOffset: CGFloat {
+        if model.draggedMenuItemID == item.id {
+            return model.menuItemDragOffset.height
+        }
+        return dropInsertion == .before ? 7 : dropInsertion == .after ? -7 : 0
     }
 
     private var secondaryText: String {
@@ -843,69 +865,6 @@ private struct MenuItemRow: View {
             ?? (item.detail.isEmpty ? item.semanticBundleIdentifier : item.detail)
     }
 
-    private func reorderButton(_ symbol: String, offset: Int, help: String) -> some View {
-        Button {
-            model.moveMenuBarItem(item.id, offset: offset)
-        } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(.secondary)
-                .frame(width: 26, height: 25)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(help)
-        .accessibilityLabel(help)
-    }
-}
-
-private struct MenuItemDropDelegate: DropDelegate {
-    let model: AppModel
-    let target: MenuBarItem
-    let enabled: Bool
-    @Binding var insertion: MenuDropInsertion?
-
-    func validateDrop(info: DropInfo) -> Bool {
-        enabled && model.draggedMenuItemID != nil && model.draggedMenuItemID != target.id
-    }
-
-    func dropEntered(info: DropInfo) {
-        updateInsertion(at: info.location)
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        updateInsertion(at: info.location)
-        return DropProposal(operation: .move)
-    }
-
-    func dropExited(info: DropInfo) {
-        withAnimation(.easeOut(duration: 0.12)) { insertion = nil }
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        guard enabled, let sourceID = model.draggedMenuItemID,
-              sourceID != target.id, let insertion else { return false }
-        model.reorderMenuBarItem(
-            sourceID: sourceID,
-            targetID: target.id,
-            placeAfterTarget: insertion == .after
-        )
-        model.draggedMenuItemID = nil
-        withAnimation(.easeOut(duration: 0.12)) { self.insertion = nil }
-        return true
-    }
-
-    private func updateInsertion(at location: CGPoint) {
-        guard enabled, model.draggedMenuItemID != target.id else {
-            insertion = nil
-            return
-        }
-        let newValue: MenuDropInsertion = location.y < 30 ? .before : .after
-        guard insertion != newValue else { return }
-        withAnimation(.spring(response: 0.2, dampingFraction: 0.84)) {
-            insertion = newValue
-        }
-    }
 }
 
 private struct MenuRowDragModifier: ViewModifier {
@@ -916,15 +875,25 @@ private struct MenuRowDragModifier: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if enabled {
-            content.draggable(item.id) {
-                HStack(spacing: 8) {
-                    MenuItemIcon(item: item)
-                    Text(item.displayName).font(.system(size: 13, weight: .semibold))
-                }
-                .padding(9)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
-                .onAppear { model.draggedMenuItemID = item.id }
-            }
+            content.simultaneousGesture(
+                DragGesture(minimumDistance: 5, coordinateSpace: .global)
+                    .onChanged { value in
+                        if model.draggedMenuItemID == nil {
+                            model.beginMenuItemDrag(item.id)
+                        }
+                        guard model.draggedMenuItemID == item.id else { return }
+                        model.updateMenuItemDrag(
+                            at: value.location,
+                            translation: value.translation
+                        )
+                    }
+                    .onEnded { _ in
+                        guard model.draggedMenuItemID == item.id else { return }
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
+                            model.finishMenuItemDrag()
+                        }
+                    }
+            )
         } else {
             content
         }
@@ -988,15 +957,15 @@ private struct MenuItemIcon: View {
                     .scaledToFit()
             } else if item.symbolName == "app.dashed" {
                 Image(systemName: "app.dashed")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 17.6, weight: .medium))
                     .foregroundStyle(.secondary)
             } else {
                 Image(systemName: item.symbolName)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 17.6, weight: .medium))
                     .foregroundStyle(.secondary)
             }
         }
-        .frame(width: 20, height: 20)
+        .frame(width: 22, height: 22)
     }
 }
 
