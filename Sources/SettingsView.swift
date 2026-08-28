@@ -1,6 +1,7 @@
 import AppKit
 import ServiceManagement
 import SwiftUI
+import UniformTypeIdentifiers
 
 private enum OpenNotchTheme {
     // macOS 27 uses noticeably softer, more continuous container geometry.
@@ -659,7 +660,7 @@ private struct MenuItemsPane: View {
                             accent: OpenNotchTheme.cyan
                         ) {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text(L("The top item is the leftmost menu bar icon. Drag anywhere on a row to reorder."))
+                                Text(L("Top means leftmost in the menu bar. Drop on the upper or lower half of a row to insert before or after it."))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                 LazyVStack(spacing: 0) {
@@ -735,12 +736,17 @@ private struct MenuItemsPane: View {
     }
 }
 
+private enum MenuDropInsertion: Equatable {
+    case before
+    case after
+}
+
 private struct MenuItemRow: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var settings = SettingsStore.shared
     @State private var isHovering = false
-    @State private var isDropTargeted = false
+    @State private var dropInsertion: MenuDropInsertion?
     let item: MenuBarItem
     let allowsReordering: Bool
 
@@ -797,51 +803,45 @@ private struct MenuItemRow: View {
         }
         .padding(.horizontal, 7)
         .frame(height: 60)
-        .background((isHovering || isDropTargeted) ? OpenNotchTheme.hoverFill(for: colorScheme) : .clear)
+        .padding(.top, dropInsertion == .before ? 7 : 0)
+        .padding(.bottom, dropInsertion == .after ? 7 : 0)
+        .background((isHovering || dropInsertion != nil) ? OpenNotchTheme.hoverFill(for: colorScheme) : .clear)
         .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
         .overlay {
-            if isDropTargeted, model.draggedMenuItemID != item.id {
+            if let dropInsertion, model.draggedMenuItemID != item.id {
                 VStack(spacing: 0) {
-                    if insertsAfterTarget { Spacer(minLength: 0) }
-                    Capsule()
-                        .fill(OpenNotchTheme.cyan)
-                        .frame(height: 4)
-                        .padding(.horizontal, 8)
-                        .shadow(color: OpenNotchTheme.cyan.opacity(0.65), radius: 5)
-                    if !insertsAfterTarget { Spacer(minLength: 0) }
+                    if dropInsertion == .after { Spacer(minLength: 0) }
+                    HStack(spacing: 0) {
+                        Circle().fill(Color.accentColor).frame(width: 7, height: 7)
+                        Rectangle().fill(Color.accentColor).frame(height: 3)
+                    }
+                    .padding(.horizontal, 7)
+                    .shadow(color: Color.accentColor.opacity(0.55), radius: 4)
+                    if dropInsertion == .before { Spacer(minLength: 0) }
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.92)))
                 .allowsHitTesting(false)
             }
         }
-        .animation(.easeOut(duration: 0.14), value: isDropTargeted)
+        .animation(.spring(response: 0.24, dampingFraction: 0.82), value: dropInsertion)
         .contentShape(Rectangle())
         .modifier(MenuRowDragModifier(enabled: MenuBarAgentBridge.isAvailable && allowsReordering, item: item))
         .onHover { isHovering = $0 }
-        .dropDestination(for: String.self) { sourceIDs, _ in
-            guard MenuBarAgentBridge.isAvailable, allowsReordering, let sourceID = sourceIDs.first else {
-                return false
-            }
-            model.reorderMenuBarItem(sourceID: sourceID, targetID: item.id)
-            model.draggedMenuItemID = nil
-            return true
-        } isTargeted: { targeted in
-            isDropTargeted = targeted
-        }
+        .onDrop(
+            of: [UTType.text],
+            delegate: MenuItemDropDelegate(
+                model: model,
+                target: item,
+                enabled: MenuBarAgentBridge.isAvailable && allowsReordering,
+                insertion: $dropInsertion
+            )
+        )
         .accessibilityElement(children: .contain)
     }
 
     private var secondaryText: String {
         settings.aiDescription(for: item.id, language: settings.language)
             ?? (item.detail.isEmpty ? item.semanticBundleIdentifier : item.detail)
-    }
-
-    private var insertsAfterTarget: Bool {
-        guard let sourceID = model.draggedMenuItemID,
-              let sourceIndex = model.filteredVisibleItems.firstIndex(where: { $0.id == sourceID }),
-              let targetIndex = model.filteredVisibleItems.firstIndex(where: { $0.id == item.id })
-        else { return false }
-        return sourceIndex < targetIndex
     }
 
     private func reorderButton(_ symbol: String, offset: Int, help: String) -> some View {
@@ -857,6 +857,55 @@ private struct MenuItemRow: View {
         .buttonStyle(.plain)
         .help(help)
         .accessibilityLabel(help)
+    }
+}
+
+private struct MenuItemDropDelegate: DropDelegate {
+    let model: AppModel
+    let target: MenuBarItem
+    let enabled: Bool
+    @Binding var insertion: MenuDropInsertion?
+
+    func validateDrop(info: DropInfo) -> Bool {
+        enabled && model.draggedMenuItemID != nil && model.draggedMenuItemID != target.id
+    }
+
+    func dropEntered(info: DropInfo) {
+        updateInsertion(at: info.location)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        updateInsertion(at: info.location)
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        withAnimation(.easeOut(duration: 0.12)) { insertion = nil }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard enabled, let sourceID = model.draggedMenuItemID,
+              sourceID != target.id, let insertion else { return false }
+        model.reorderMenuBarItem(
+            sourceID: sourceID,
+            targetID: target.id,
+            placeAfterTarget: insertion == .after
+        )
+        model.draggedMenuItemID = nil
+        withAnimation(.easeOut(duration: 0.12)) { self.insertion = nil }
+        return true
+    }
+
+    private func updateInsertion(at location: CGPoint) {
+        guard enabled, model.draggedMenuItemID != target.id else {
+            insertion = nil
+            return
+        }
+        let newValue: MenuDropInsertion = location.y < 30 ? .before : .after
+        guard insertion != newValue else { return }
+        withAnimation(.spring(response: 0.2, dampingFraction: 0.84)) {
+            insertion = newValue
+        }
     }
 }
 

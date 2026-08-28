@@ -265,7 +265,11 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func reorderMenuBarItem(sourceID: String, targetID: String) {
+    func reorderMenuBarItem(
+        sourceID: String,
+        targetID: String,
+        placeAfterTarget requestedPlacement: Bool? = nil
+    ) {
         guard !isReordering else {
             Diagnostics.shared.append("Menu bar reorder ignored while another reorder is pending")
             return
@@ -283,8 +287,13 @@ final class AppModel: ObservableObject {
         let source = physicalItems[sourceIndex]
         let target = physicalItems[targetIndex]
         guard !source.isProtected, !target.isProtected else { return }
+        let placeAfterTarget = requestedPlacement ?? (sourceIndex < targetIndex)
+        var proposedOrder = physicalItems.map(\.id)
+        proposedOrder.remove(at: sourceIndex)
+        guard let adjustedTargetIndex = proposedOrder.firstIndex(of: targetID) else { return }
+        proposedOrder.insert(sourceID, at: adjustedTargetIndex + (placeAfterTarget ? 1 : 0))
+        guard proposedOrder != physicalItems.map(\.id) else { return }
         isReordering = true
-        let placeAfterTarget = sourceIndex < targetIndex
 
         // Our AppKit status item does not appear in MenuBarAgent's persisted
         // position dictionary. Command-drag it directly; AppKit persists the

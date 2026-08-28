@@ -175,6 +175,7 @@
 "No changes are needed" = "No changes are needed";
 "Manual Management" = "Manual Management";
 "Drag to reorder" = "Drag to reorder";
+"Top means leftmost in the menu bar. Drop on the upper or lower half of a row to insert before or after it." = "Top means leftmost in the menu bar. Drop on the upper or lower half of a row to insert before or after it.";
 "Move Up" = "Move Up";
 "Move Down" = "Move Down";
 "Manual reorder" = "Manual reorder";
