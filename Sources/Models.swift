@@ -15,6 +15,20 @@ enum ItemDisposition: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+enum ExternalDisplayMode: String, CaseIterable, Codable, Identifiable {
+    case sameLayout
+    case showAll
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .sameLayout: L("Use Built-in Display Layout")
+        case .showAll: L("Show All")
+        }
+    }
+}
+
 struct MenuBarItem: Identifiable, Equatable {
     let id: String
     let windowID: CGWindowID

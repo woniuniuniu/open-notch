@@ -100,9 +100,6 @@ private struct WindowVisualEffect: NSViewRepresentable {
 }
 
 private struct CompactTopBar: View {
-    @EnvironmentObject private var model: AppModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Namespace private var namespace
     @Binding var showMenu: Bool
 
     var body: some View {
@@ -113,12 +110,8 @@ private struct CompactTopBar: View {
                 .resizable().frame(width: 26, height: 26)
                 .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.compactCornerRadius, style: .continuous))
 
-            HStack(spacing: 2) {
-                topTab(L("Overview"), pane: .overview, icon: "sparkles")
-                topTab(L("Items"), pane: .menuItems, icon: "menubar.rectangle")
-            }
-            .padding(3)
-            .background(.black.opacity(0.12), in: Capsule())
+            Text(L("App Name"))
+                .font(.system(size: 14, weight: .semibold))
 
             Spacer(minLength: 0)
 
@@ -134,27 +127,6 @@ private struct CompactTopBar: View {
         .frame(height: 42)
     }
 
-    @ViewBuilder
-    private func topTab(_ title: String, pane: SettingsPane, icon: String) -> some View {
-        Button {
-            withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.82)) {
-                model.selectedPane = pane
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: icon).font(.system(size: 11, weight: .bold))
-                Text(title).font(.system(size: 13, weight: .semibold))
-            }
-            .padding(.horizontal, 10).frame(height: 27)
-            .background {
-                if model.selectedPane == pane || (pane == .overview && model.selectedPane == nil) {
-                    Capsule().fill(.white.opacity(0.19)).matchedGeometryEffect(id: "tab", in: namespace)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
 }
 
 private struct SettingsQuickMenu: View {
@@ -164,6 +136,8 @@ private struct SettingsQuickMenu: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
+            menuButton(L("Menu Bar Items"), icon: "menubar.rectangle", pane: .menuItems)
+            menuButton(L("Overview"), icon: "rectangle.topthird.inset.filled", pane: .overview)
             menuButton(L("OneDrive"), icon: "cloud.fill", pane: .oneDrive)
             menuButton(L("General"), icon: "slider.horizontal.3", pane: .general)
             menuButton(L("About"), icon: "info.circle", pane: .about)
@@ -1369,6 +1343,36 @@ private struct GeneralPane: View {
                         ))
                         .labelsHidden()
                     }
+                }
+            }
+
+            GlassPanel(title: L("Displays"), systemImage: "display.2", accent: OpenNotchTheme.blue) {
+                SettingsLine(
+                    L("External Display"),
+                    subtitle: model.externalDisplayStatusText,
+                    systemImage: "display.2",
+                    tint: model.externalDisplayConnected ? OpenNotchTheme.cyan : Color.secondary
+                ) {
+                    Picker("", selection: Binding(
+                        get: { settings.externalDisplayMode },
+                        set: { model.setExternalDisplayMode($0) }
+                    )) {
+                        ForEach(ExternalDisplayMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 190)
+                }
+
+                if settings.externalDisplayMode == .showAll {
+                    Divider().opacity(0.55)
+                    Text(L("Show All reveals every managed icon when an external display is the primary display. The compact layout returns automatically when the built-in display becomes primary."))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 11)
                 }
             }
 

@@ -17,10 +17,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var aiRecommendationMessage: String?
     @Published private(set) var aiRequestPhase: AIRequestPhase?
     @Published var selectedAIPlanID: String?
-    @Published var selectedPane: SettingsPane? = .overview {
+    @Published var selectedPane: SettingsPane? = .menuItems {
         didSet { refreshMenuItemSections() }
     }
     @Published var searchText = ""
+    @Published private(set) var externalDisplayConnected = false
+    @Published private(set) var externalDisplayIsPrimary = false
     private var sectionDispositions = [String: ItemDisposition]()
 
     let settings = SettingsStore.shared
@@ -54,6 +56,22 @@ final class AppModel: ObservableObject {
     var isExpanded: Bool { settings.isExpanded }
     var canManageMenuBar: Bool { MenuBarAgentBridge.isAvailable || hasAccessibilityPermission }
     var oneDriveItem: MenuBarItem? { items.first(where: \.isOneDrive) }
+    var externalDisplayStatusText: String {
+        guard externalDisplayConnected else { return L("No external display detected") }
+        return externalDisplayIsPrimary
+            ? L("External display is currently primary")
+            : L("Built-in display is currently primary")
+    }
+
+    private var shouldShowAllOnExternalDisplay: Bool {
+        externalDisplayConnected
+            && externalDisplayIsPrimary
+            && settings.externalDisplayMode == .showAll
+    }
+
+    private var effectiveExpanded: Bool {
+        settings.isExpanded || shouldShowAllOnExternalDisplay
+    }
 
     private var aiRecommendationCountToday: Int {
         settings.aiRecommendationDates.filter { Calendar.current.isDateInToday($0) }.count
@@ -142,6 +160,7 @@ final class AppModel: ObservableObject {
         // Expansion is a temporary preview, not a preference. Always start with
         // hidden items actually offscreen so the UI matches the menu bar.
         settings.isExpanded = false
+        updateDisplayState(reason: L("Display configuration changed"), apply: false)
 
         let statusBar = StatusBarController()
         statusBar.onToggle = { [weak self] in self?.toggleExpanded() }
@@ -760,6 +779,12 @@ final class AppModel: ObservableObject {
         objectWillChange.send()
     }
 
+    func setExternalDisplayMode(_ mode: ExternalDisplayMode) {
+        guard settings.externalDisplayMode != mode else { return }
+        settings.externalDisplayMode = mode
+        updateDisplayState(reason: L("Display mode changed"), apply: true)
+    }
+
     func setLanguage(_ language: AppLanguage) {
         guard settings.language != language else { return }
         settings.language = language
@@ -810,7 +835,7 @@ final class AppModel: ObservableObject {
             settings.oneDriveGuardianEnabled,
             oneDriveItem == nil,
             isOneDriveRunning,
-            !settings.isExpanded,
+            !effectiveExpanded,
             hasAccessibilityPermission,
             !identityRebindInProgress,
             canRebindIdentity
@@ -821,7 +846,9 @@ final class AppModel: ObservableObject {
 
         var desiredPositions = [String: ItemDisposition]()
         for item in items where !item.isProtected {
-            if settings.policies[item.id] != nil {
+            if shouldShowAllOnExternalDisplay {
+                desiredPositions[item.id] = .visible
+            } else if settings.policies[item.id] != nil {
                 desiredPositions[item.id] = settings.disposition(for: item)
             }
             if item.isOneDrive, settings.oneDriveGuardianEnabled {
@@ -983,7 +1010,7 @@ final class AppModel: ObservableObject {
         ]
         for item in items where item.semanticIdentifier.hasPrefix("module:") {
             let module = String(item.semanticIdentifier.dropFirst("module:".count))
-            if !settings.isExpanded,
+            if !effectiveExpanded,
                settings.disposition(for: item) == .hidden,
                let id = systemItemIDs[module]
             {
@@ -992,7 +1019,7 @@ final class AppModel: ObservableObject {
         }
         var allowed = Set(items.compactMap { item -> String? in
             guard !item.semanticIdentifier.hasPrefix("module:") else { return nil }
-            return settings.isExpanded || settings.disposition(for: item) == .visible
+            return effectiveExpanded || settings.disposition(for: item) == .visible
                 ? item.semanticBundleIdentifier
                 : nil
         })
@@ -1080,9 +1107,9 @@ final class AppModel: ObservableObject {
     }
 
     private func updateStatusBar() {
-        statusBar?.setExpanded(settings.isExpanded)
+        statusBar?.setExpanded(effectiveExpanded)
         statusBar?.updateMenu(
-            isExpanded: settings.isExpanded,
+            isExpanded: effectiveExpanded,
             guardianEnabled: settings.oneDriveGuardianEnabled,
             hasAccessibilityPermission: hasAccessibilityPermission
         )
@@ -1122,6 +1149,39 @@ final class AppModel: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.recheckAccessibilityPermission() }
         })
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateDisplayState(reason: L("Display configuration changed"), apply: true)
+            }
+        })
+    }
+
+    private func updateDisplayState(reason: String, apply: Bool) {
+        let screens = NSScreen.screens
+        let displayInfo = screens.compactMap { screen -> (screen: NSScreen, builtIn: Bool)? in
+            guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+                return nil
+            }
+            return (screen, CGDisplayIsBuiltin(CGDirectDisplayID(number.uint32Value)) != 0)
+        }
+        externalDisplayConnected = displayInfo.contains { !$0.builtIn }
+        let primary = displayInfo.first { abs($0.screen.frame.minX) < 0.5 && abs($0.screen.frame.minY) < 0.5 }
+        externalDisplayIsPrimary = primary.map { !$0.builtIn } ?? false
+        Diagnostics.shared.append(
+            "Display mode applied; reason=\(reason); externalConnected=\(externalDisplayConnected); " +
+            "externalPrimary=\(externalDisplayIsPrimary); mode=\(settings.externalDisplayMode.rawValue)"
+        )
+        updateStatusBar()
+        objectWillChange.send()
+        guard apply else { return }
+        if MenuBarAgentBridge.isAvailable {
+            applyMenuBarAgentVisibility(reason: reason)
+        }
+        refresh(reason: reason, reconcile: true)
     }
 
     private func schedulePermissionChecks() {

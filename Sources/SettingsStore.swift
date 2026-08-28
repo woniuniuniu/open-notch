@@ -22,6 +22,7 @@ final class SettingsStore: ObservableObject {
         static let aiItemDescriptions = "aiItemDescriptions.v1"
         static let hiddenItemPositions = "hiddenItemPositions.v1"
         static let restoredSystemItemVisibility = "restoredSystemItemVisibility.v2"
+        static let externalDisplayMode = "externalDisplayMode.v1"
     }
 
     @Published var policies: [String: ItemDisposition] {
@@ -62,6 +63,10 @@ final class SettingsStore: ObservableObject {
 
     @Published var showInDock: Bool {
         didSet { defaults.set(showInDock, forKey: Key.showInDock) }
+    }
+
+    @Published var externalDisplayMode: ExternalDisplayMode {
+        didSet { defaults.set(externalDisplayMode.rawValue, forKey: Key.externalDisplayMode) }
     }
 
     let aiInstallationID: String
@@ -118,6 +123,9 @@ final class SettingsStore: ObservableObject {
         language = AppLanguage(rawValue: defaults.string(forKey: Key.language) ?? "") ?? .english
         appearanceMode = AppearanceMode(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system
         showInDock = defaults.object(forKey: Key.showInDock) as? Bool ?? false
+        externalDisplayMode = ExternalDisplayMode(
+            rawValue: defaults.string(forKey: Key.externalDisplayMode) ?? ""
+        ) ?? .sameLayout
         if let storedID = defaults.string(forKey: Key.aiInstallationID), !storedID.isEmpty {
             aiInstallationID = storedID
         } else {

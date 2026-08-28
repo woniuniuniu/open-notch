@@ -74,6 +74,16 @@
 "Open-source menu bar manager" = "Open-source menu bar manager";
 "Operation" = "Operation";
 "Overview" = "Overview";
+"Displays" = "Displays";
+"External Display" = "External Display";
+"No external display detected" = "No external display detected";
+"External display is currently primary" = "External display is currently primary";
+"Built-in display is currently primary" = "Built-in display is currently primary";
+"Show All" = "Show All";
+"Use Built-in Display Layout" = "Use Built-in Display Layout";
+"Show All reveals every managed icon when an external display is the primary display. The compact layout returns automatically when the built-in display becomes primary." = "Show All reveals every managed icon when an external display is the primary display. The compact layout returns automatically when the built-in display becomes primary.";
+"Display configuration changed" = "Display configuration changed";
+"Display mode changed" = "Display mode changed";
 "Permission" = "Permission";
 "Permission active: identifying menu bar items" = "Permission active: identifying menu bar items";
 "Pinning" = "Pinning";
