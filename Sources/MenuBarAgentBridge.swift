@@ -139,32 +139,26 @@ enum MenuBarAgentBridge {
         _ sourceKey: String,
         adjacentTo targetKey: String,
         placeAfterTarget: Bool,
-        liveOrder: [String]
+        livePositions: [String: Double]
     ) -> Bool {
         guard
             isAvailable,
             sourceKey != targetKey,
-            var current = positions(),
-            current[sourceKey] != nil,
-            current[targetKey] != nil
+            var current = positions()
         else { return false }
-        // Preserve the slots currently occupying each real AX position and
-        // assign those slots to the requested order. The numeric values are
-        // not globally monotonic on macOS 27 (different item families use
-        // different ranges), so sorting the numbers corrupts the live order.
-        var orderedKeys = liveOrder.filter { current[$0] != nil }
-        guard orderedKeys.contains(sourceKey), orderedKeys.contains(targetKey) else { return false }
-        let existingSlots = orderedKeys.compactMap { current[$0] }
-        guard existingSlots.count == orderedKeys.count else { return false }
-        orderedKeys.removeAll { $0 == sourceKey }
-        guard let targetIndex = orderedKeys.firstIndex(of: targetKey) else { return false }
-        let insertionIndex = targetIndex + (placeAfterTarget ? 1 : 0)
-        orderedKeys.insert(sourceKey, at: insertionIndex)
-
-        guard orderedKeys.count == existingSlots.count else { return false }
-        for (index, key) in orderedKeys.enumerated() {
-            current[key] = existingSlots[index]
-        }
+        // AX-only status items may not have reached this dictionary yet.
+        // Seed only the two items participating in the move from their real
+        // menu-bar coordinates. This makes the operation persistent without
+        // posting Command-drag events into the global input stream.
+        if current[sourceKey] == nil { current[sourceKey] = livePositions[sourceKey] }
+        if current[targetKey] == nil { current[targetKey] = livePositions[targetKey] }
+        guard current[sourceKey] != nil, current[targetKey] != nil else { return false }
+        // Change only the dragged item. Reassigning every visible item's slot
+        // mixes unrelated MenuBarAgent number ranges and can scramble the
+        // entire bar. AppKit itself uses a small fractional offset to express
+        // adjacency, which also leaves every other icon untouched.
+        guard let targetPosition = current[targetKey] else { return false }
+        current[sourceKey] = targetPosition + (placeAfterTarget ? 0.25 : -0.25)
         CFPreferencesSetValue(
             positionsKey as CFString,
             current as CFDictionary,
@@ -179,7 +173,8 @@ enum MenuBarAgentBridge {
         )
         Diagnostics.shared.append(
             "MenuBarAgent reorder; source=\(sourceKey); target=\(targetKey); " +
-            "after=\(placeAfterTarget); slot=\(current[sourceKey] ?? -1); synchronized=\(synchronized)"
+            "after=\(placeAfterTarget); slot=\(current[sourceKey] ?? -1); " +
+            "inputSynthesis=false; synchronized=\(synchronized)"
         )
         return synchronized
     }

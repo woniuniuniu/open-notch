@@ -136,62 +136,51 @@ enum MenuBarMoveEngine {
         .permitSystemDefinedEvents,
     ]
 
-    /// macOS 27 fallback for MenuBarAgent builds that persist preferred slots
-    /// but do not apply them during a compositor layout nudge. It reproduces
-    /// the system's native Command-drag while the cursor is hidden and restores
-    /// the user's latest physical pointer location afterward.
-    static func reorder(
+    /// Reorders one status item using events that are intercepted from the
+    /// shared session stream and delivered only to the owning process.
+    /// No event is allowed to reach the foreground application.
+    static func reorderTargeted(
         _ item: MenuBarItem,
         adjacentTo target: MenuBarItem,
         placeAfterTarget: Bool
     ) -> Result {
-        guard AccessibilityResolver.isTrusted() else { return .failed }
-        guard item.frame.width > 0, target.frame.width > 0,
-              let shield = CursorShield(),
-              let source = CGEventSource(stateID: .hidSystemState)
+        guard AccessibilityResolver.isTrusted(), item.hostPID > 0,
+              item.frame.width > 0, target.frame.width > 0,
+              waitForUserInputToSettle(timeout: 0.8),
+              let source = CGEventSource(stateID: .privateState)
         else { return .failed }
-        defer { shield.finish() }
-        shield.setSyntheticGestureInProgress(true)
-        defer { shield.setSyntheticGestureInProgress(false) }
 
-        source.setLocalEventsFilterDuringSuppressionState(
-            permitAllEvents,
-            state: .eventSuppressionStateRemoteMouseDrag
-        )
-        source.localEventsSuppressionInterval = 0
         let start = CGPoint(x: item.frame.midX, y: item.frame.midY)
-        let targetInset = max(4, target.frame.width * 0.25)
+        let inset = max(4, target.frame.width * 0.25)
         let end = CGPoint(
-            // AX frames can overlap by a few points in MenuBarAgent. Drop in
-            // the target's near/far quarter instead of beyond its bounds, or
-            // the gesture may be interpreted as targeting the next icon.
-            x: placeAfterTarget
-                ? target.frame.maxX - targetInset
-                : target.frame.minX + targetInset,
+            x: placeAfterTarget ? target.frame.maxX - inset : target.frame.minX + inset,
             y: target.frame.midY
         )
-        guard let moved = pointerEvent(.mouseMoved, at: start, source: source),
-              let down = pointerEvent(.leftMouseDown, at: start, source: source),
-              let up = pointerEvent(.leftMouseUp, at: end, source: source)
+        guard let down = event(.leftMouseDown, at: start, windowID: item.windowID, targetPID: item.hostPID, source: source),
+              let up = event(.leftMouseUp, at: end, windowID: item.windowID, targetPID: item.hostPID, source: source),
+              let cleanup = event(.leftMouseUp, at: start, windowID: item.windowID, targetPID: item.hostPID, source: source)
         else { return .failed }
 
-        moved.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.03)
-        down.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.06)
-        for step in 1...24 {
-            guard !shield.userInteracted else { return .deferredForUserInput }
-            let progress = CGFloat(step) / 24
+        guard TargetedEventRouter.route(down, through: item.hostPID) else { return .failed }
+        var completed = false
+        defer { if !completed { cleanup.postToPid(item.hostPID) } }
+        for step in 1...12 {
+            let progress = CGFloat(step) / 12
             let point = CGPoint(
                 x: start.x + (end.x - start.x) * progress,
                 y: start.y + (end.y - start.y) * progress
             )
-            pointerEvent(.leftMouseDragged, at: point, source: source)?.post(tap: .cghidEventTap)
-            Thread.sleep(forTimeInterval: 0.018)
+            guard let dragged = event(
+                .leftMouseDragged,
+                at: point,
+                windowID: item.windowID,
+                targetPID: item.hostPID,
+                source: source
+            ), TargetedEventRouter.route(dragged, through: item.hostPID) else { return .failed }
         }
-        up.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.16)
-        return shield.userInteracted ? .deferredForUserInput : .moved
+        guard TargetedEventRouter.route(up, through: item.hostPID) else { return .failed }
+        completed = true
+        return .moved
     }
 
     static func move(
@@ -365,21 +354,6 @@ enum MenuBarMoveEngine {
         event.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(windowID))
         event.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(windowID))
         event.setIntegerValueField(windowIDField, value: Int64(windowID))
-        return event
-    }
-
-    private static func pointerEvent(
-        _ type: CGEventType,
-        at point: CGPoint,
-        source: CGEventSource
-    ) -> CGEvent? {
-        guard let event = CGEvent(
-            mouseEventSource: source,
-            mouseType: type,
-            mouseCursorPosition: point,
-            mouseButton: .left
-        ) else { return nil }
-        event.flags = .maskCommand
         return event
     }
 

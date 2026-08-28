@@ -6,8 +6,8 @@ import CoreGraphics
 import Foundation
 
 /// Delivers one tagged event through the target process and the session event
-/// stream. Recent macOS releases ignore a directly posted Command-drag for
-/// hosted status items, so both hops must be observed before the move proceeds.
+/// stream. The tagged session event is intercepted before normal applications
+/// can receive it, then delivered only to the intended status-item process.
 enum TargetedEventRouter {
     fileprivate final class Context {
         let event: CGEvent
@@ -51,8 +51,8 @@ enum TargetedEventRouter {
             ),
             let sessionTap = CGEvent.tapCreate(
                 tap: .cgSessionEventTap,
-                place: .tailAppendEventTap,
-                options: .listenOnly,
+                place: .headInsertEventTap,
+                options: .defaultTap,
                 eventsOfInterest: eventMask,
                 callback: targetedSessionTapCallback,
                 userInfo: opaqueContext
@@ -108,7 +108,9 @@ enum TargetedEventRouter {
         context.event.postToPid(context.targetPID)
         context.completed = true
         CFRunLoopStop(context.runLoop)
-        return Unmanaged.passUnretained(event)
+        // Swallow the tagged session copy. Passing it onward can leak a
+        // Command-click into the foreground app and close or switch windows.
+        return nil
     }
 }
 

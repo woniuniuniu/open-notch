@@ -33,6 +33,7 @@ final class AppModel: ObservableObject {
     private var observers = [NSObjectProtocol]()
     private var isStopping = false
     private var isMoving = false
+    private var isReordering = false
     private var pendingRefresh: (reason: String, reconcile: Bool)?
     private var itemsByWindowID = [CGWindowID: MenuBarItem]()
     // Computed once per discovery pass; never query CoreGraphics from a SwiftUI row.
@@ -265,6 +266,10 @@ final class AppModel: ObservableObject {
     }
 
     func reorderMenuBarItem(sourceID: String, targetID: String) {
+        guard !isReordering else {
+            Diagnostics.shared.append("Menu bar reorder ignored while another reorder is pending")
+            return
+        }
         let physicalItems = items.filter {
             disposition(for: $0) == .visible
                 && ($0.frame.width > 1 || $0.isOpenNotchControl)
@@ -278,6 +283,7 @@ final class AppModel: ObservableObject {
         let source = physicalItems[sourceIndex]
         let target = physicalItems[targetIndex]
         guard !source.isProtected, !target.isProtected else { return }
+        isReordering = true
         let placeAfterTarget = sourceIndex < targetIndex
 
         // Our AppKit status item does not appear in MenuBarAgent's persisted
@@ -292,6 +298,7 @@ final class AppModel: ObservableObject {
             }
             Diagnostics.shared.append("Open Notch menu item reorder saved=\(moved); inputSynthesis=false")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.isReordering = false
                 self?.refresh(reason: L("Manual reorder"), reconcile: false)
             }
             return
@@ -300,54 +307,60 @@ final class AppModel: ObservableObject {
             source.semanticIdentifier,
             adjacentTo: target.semanticIdentifier,
             placeAfterTarget: placeAfterTarget,
-            liveOrder: physicalItems.map(\.semanticIdentifier)
+            livePositions: Dictionary(
+                physicalItems.map { ($0.semanticIdentifier, Double($0.frame.minX)) },
+                uniquingKeysWith: { current, _ in current }
+            )
         ) else {
-            // Newly discovered AX-only items (including ChatGPT and FlClash)
-            // do not have a persisted MenuBarAgent slot yet. Reorder their
-            // real status-item geometry directly instead of rejecting them.
-            let result = MenuBarMoveEngine.reorder(
-                source,
-                adjacentTo: target,
-                placeAfterTarget: placeAfterTarget
-            )
             Diagnostics.shared.append(
-                "AX-only direct reorder; source=\(source.id); target=\(target.id); " +
-                "result=\(String(describing: result))"
+                "MenuBarAgent reorder failed safely; source=\(source.id); target=\(target.id); " +
+                "inputSynthesis=false"
             )
-            if result == .failed { addEvent(L("Could not reorder menu bar item")) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.refresh(reason: L("Manual reorder"), reconcile: false)
-            }
+            addEvent(L("Could not reorder menu bar item"))
+            isReordering = false
             return
         }
 
         statusBar?.requestMenuBarPositionRefresh()
         Diagnostics.shared.append("Menu bar order saved and layout refresh requested without restarting MenuBarAgent")
 
-        // Some macOS 27 betas persist the preferred-position swap but never
-        // apply it to live AX geometry. Verify the actual coordinates, then use
-        // the system Command-drag interaction only as a cursor-shielded fallback.
+        // Verify the native layout result. Never fall back to global pointer or
+        // modifier events: those can reach the foreground application and
+        // trigger app switching, window closing, or unrelated menu actions.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak self] in
             guard let self else { return }
             let live = MenuBarAgentBridge.items()
             guard let liveSource = live.first(where: { $0.id == source.id }),
                   let liveTarget = live.first(where: { $0.id == target.id })
-            else { return }
+            else {
+                self.isReordering = false
+                return
+            }
             let applied = placeAfterTarget
                 ? liveSource.frame.minX > liveTarget.frame.minX
                 : liveSource.frame.minX < liveTarget.frame.minX
             guard !applied else {
                 self.items = live
                 Diagnostics.shared.append("Menu bar reorder verified from live AX geometry")
+                self.isReordering = false
                 return
             }
-            let result = MenuBarMoveEngine.reorder(
+            Diagnostics.shared.append(
+                "Menu bar reorder persisted but live layout did not update; " +
+                "source=\(source.id); target=\(target.id); inputSynthesis=false"
+            )
+            let result = MenuBarMoveEngine.reorderTargeted(
                 liveSource,
                 adjacentTo: liveTarget,
                 placeAfterTarget: placeAfterTarget
             )
-            Diagnostics.shared.append("Menu bar Command-drag fallback result=\(String(describing: result))")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            Diagnostics.shared.append(
+                "Target-process-only reorder; source=\(source.id); target=\(target.id); " +
+                "result=\(String(describing: result)); foregroundDelivery=false"
+            )
+            if case .failed = result { self.addEvent(L("Could not reorder menu bar item")) }
+            self.isReordering = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
                 self?.refresh(reason: L("Manual reorder"), reconcile: false)
             }
         }
