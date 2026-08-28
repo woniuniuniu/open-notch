@@ -72,15 +72,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let view = SettingsRootView().environmentObject(AppModel.shared)
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 470, height: 650),
-                styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                // A titled window adds a second system mask to the two upper
+                // corners. The app already supplies its own traffic lights and
+                // chrome, so a borderless resizable window lets one uniform
+                // four-corner mask define the entire settings window.
+                styleMask: [.borderless, .resizable],
                 backing: .buffered,
                 defer: false
             )
             window.title = L("App Name")
             window.identifier = NSUserInterfaceItemIdentifier("OpenNotch.Settings")
-            window.titlebarAppearsTransparent = true
-            window.titleVisibility = .hidden
-            window.titlebarSeparatorStyle = .none
             window.tabbingMode = .disallowed
             window.isReleasedWhenClosed = false
             window.collectionBehavior = [.moveToActiveSpace]

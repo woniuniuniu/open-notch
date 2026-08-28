@@ -103,7 +103,10 @@ final class AppModel: ObservableObject {
     }
 
     var filteredVisibleItems: [MenuBarItem] {
-        filteredItems.filter { sectionDisposition(for: $0) == .visible && $0.hostPID != 0 }
+        filteredItems.filter {
+            sectionDisposition(for: $0) == .visible
+                && $0.frame.width > 1
+        }
     }
 
     var filteredHiddenItems: [MenuBarItem] {
@@ -111,7 +114,11 @@ final class AppModel: ObservableObject {
     }
 
     var filteredInactiveItems: [MenuBarItem] {
-        filteredItems.filter { sectionDisposition(for: $0) == .visible && $0.hostPID == 0 }
+        filteredItems.filter {
+            sectionDisposition(for: $0) == .visible
+                && $0.frame.width <= 1
+                && !$0.semanticIdentifier.hasPrefix("module:")
+        }
     }
 
     private func sectionDisposition(for item: MenuBarItem) -> ItemDisposition {
@@ -229,21 +236,25 @@ final class AppModel: ObservableObject {
     }
 
     func reorderMenuBarItem(sourceID: String, targetID: String) {
+        let physicalItems = items.filter {
+            disposition(for: $0) == .visible
+                && $0.frame.width > 1
+        }.sorted { $0.frame.minX < $1.frame.minX }
         guard MenuBarAgentBridge.isAvailable,
-              let sourceIndex = items.firstIndex(where: { $0.id == sourceID }),
-              let targetIndex = items.firstIndex(where: { $0.id == targetID }),
+              let sourceIndex = physicalItems.firstIndex(where: { $0.id == sourceID }),
+              let targetIndex = physicalItems.firstIndex(where: { $0.id == targetID }),
               sourceIndex != targetIndex
         else { return }
 
-        let source = items[sourceIndex]
-        let target = items[targetIndex]
+        let source = physicalItems[sourceIndex]
+        let target = physicalItems[targetIndex]
         guard !source.isProtected, !target.isProtected else { return }
         let placeAfterTarget = sourceIndex < targetIndex
         guard MenuBarAgentBridge.moveItem(
             source.semanticIdentifier,
             adjacentTo: target.semanticIdentifier,
             placeAfterTarget: placeAfterTarget,
-            liveOrder: items.map(\.semanticIdentifier)
+            liveOrder: physicalItems.map(\.semanticIdentifier)
         ) else {
             Diagnostics.shared.append("MenuBarAgent reorder failed; source=\(source.id); target=\(target.id)")
             addEvent(L("Could not reorder menu bar item"))
@@ -285,8 +296,10 @@ final class AppModel: ObservableObject {
     func moveMenuBarItem(_ id: String, offset: Int) {
         guard offset != 0 else { return }
         let sortable = items.filter {
-            !$0.isProtected && disposition(for: $0) == .visible
-        }
+            !$0.isProtected
+                && disposition(for: $0) == .visible
+                && $0.frame.width > 1
+        }.sorted { $0.frame.minX < $1.frame.minX }
         guard let index = sortable.firstIndex(where: { $0.id == id }) else { return }
         let targetIndex = index + offset
         guard sortable.indices.contains(targetIndex) else { return }

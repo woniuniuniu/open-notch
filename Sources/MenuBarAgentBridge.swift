@@ -19,10 +19,20 @@ enum MenuBarAgentBridge {
     static func items() -> [MenuBarItem] {
         guard isAvailable, let positions = positions() else { return [] }
         let extras = AccessibilityResolver.menuExtras()
-        return positions.compactMap(makeItem).map { item in
+        return positions.compactMap(makeItem).filter(isInstalledOrSystemItem).map { item in
             guard let extra = bestAccessibilityMatch(for: item, in: extras) else { return item }
             return replacingFrame(of: item, with: extra.frame)
         }.sorted { $0.frame.minX < $1.frame.minX }
+    }
+
+    private static func isInstalledOrSystemItem(_ item: MenuBarItem) -> Bool {
+        guard item.semanticIdentifier.hasPrefix("status:") else { return true }
+        let bundleID = item.semanticBundleIdentifier
+        if bundleID.hasPrefix("com.apple.") { return true }
+        if NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == bundleID }) {
+            return true
+        }
+        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
     }
 
     static func positions() -> [String: Double]? {

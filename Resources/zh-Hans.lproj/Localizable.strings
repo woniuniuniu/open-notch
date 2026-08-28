@@ -169,7 +169,7 @@
 "Restart failed" = "重新启动失败";
 "Visible Items (%d)" = "正在显示（%d）";
 "Hidden Items (%d)" = "已经隐藏（%d）";
-"Drag the handle to reorder visible menu bar items." = "拖动左侧把手或使用箭头可调整正在显示的图标顺序。";
+"Drag the handle to reorder visible menu bar items." = "拖动整行任意位置或使用箭头，即可调整正在显示的图标顺序。";
 "Hidden items keep their previous positions and do not participate in sorting." = "隐藏项目保留原来的位置，不参与排序。";
 "Show an item to return it to its previous position and make it sortable again." = "点击显示后，图标会回到原来的位置并重新参与排序。";
 "Not Running (%d)" = "当前未运行（%d）";

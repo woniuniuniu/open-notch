@@ -169,7 +169,7 @@
 "Restart failed" = "Restart failed";
 "Visible Items (%d)" = "Visible Items (%d)";
 "Hidden Items (%d)" = "Hidden Items (%d)";
-"Drag the handle to reorder visible menu bar items." = "Drag the handle or use the arrow buttons to reorder visible menu bar items.";
+"Drag the handle to reorder visible menu bar items." = "Drag anywhere on a row or use the arrow buttons to reorder visible menu bar items.";
 "Hidden items keep their previous positions and do not participate in sorting." = "Hidden items keep their previous positions and do not participate in sorting.";
 "Show an item to return it to its previous position and make it sortable again." = "Show an item to return it to its previous position and make it sortable again.";
 "Not Running (%d)" = "Not Running (%d)";

@@ -847,18 +847,13 @@ private struct MenuItemRow: View {
                         .contentShape(Rectangle())
                         .help(L("Drag to reorder"))
                         .accessibilityLabel(L("Drag to reorder"))
-                        .draggable(item.id) {
-                            Label(item.displayName, systemImage: item.symbolName)
-                                .padding(8)
-                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
-                        }
 
                     VStack(spacing: 0) {
                         reorderButton("chevron.up", offset: -1, help: L("Move Up"))
                         reorderButton("chevron.down", offset: 1, help: L("Move Down"))
                     }
                 }
-                .frame(width: 42, height: 42)
+                .frame(width: 48, height: 52)
             }
 
             MenuItemIcon(item: item)
@@ -894,6 +889,8 @@ private struct MenuItemRow: View {
         .frame(height: 60)
         .background((isHovering || isDropTargeted) ? OpenNotchTheme.hoverFill(for: colorScheme) : .clear)
         .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
+        .contentShape(Rectangle())
+        .modifier(MenuRowDragModifier(enabled: MenuBarAgentBridge.isAvailable && allowsReordering, item: item))
         .onHover { isHovering = $0 }
         .dropDestination(for: String.self) { sourceIDs, _ in
             guard MenuBarAgentBridge.isAvailable, allowsReordering, let sourceID = sourceIDs.first else {
@@ -919,12 +916,33 @@ private struct MenuItemRow: View {
             Image(systemName: symbol)
                 .font(.system(size: 8, weight: .bold))
                 .foregroundStyle(.secondary)
-                .frame(width: 18, height: 20)
+                .frame(width: 26, height: 25)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(help)
         .accessibilityLabel(help)
+    }
+}
+
+private struct MenuRowDragModifier: ViewModifier {
+    let enabled: Bool
+    let item: MenuBarItem
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            content.draggable(item.id) {
+                HStack(spacing: 8) {
+                    MenuItemIcon(item: item)
+                    Text(item.displayName).font(.system(size: 13, weight: .semibold))
+                }
+                .padding(9)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
+            }
+        } else {
+            content
+        }
     }
 }
 
@@ -993,6 +1011,7 @@ private struct MenuItemIcon: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .frame(width: 20, height: 20)
     }
 }
 
