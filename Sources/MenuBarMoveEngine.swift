@@ -136,10 +136,64 @@ enum MenuBarMoveEngine {
         .permitSystemDefinedEvents,
     ]
 
+    /// Stops tagged reorder events before they can reach an ordinary app
+    /// window. WindowServer still observes the HID event, while the owning
+    /// status-item process receives an explicit process-scoped copy.
+    private final class ReorderEventShield {
+        let token: Int64
+        let targetPID: pid_t
+        let allowedRect: CGRect
+        private var tap: CFMachPort?
+        private var source: CFRunLoopSource?
+        private let runLoop: CFRunLoop
+
+        init?(targetPID: pid_t, allowedRect: CGRect) {
+            guard targetPID > 0, let runLoop = CFRunLoopGetCurrent() else { return nil }
+            self.targetPID = targetPID
+            self.allowedRect = allowedRect
+            self.runLoop = runLoop
+            token = Int64.random(in: 1...Int64.max)
+            let types: [CGEventType] = [.mouseMoved, .leftMouseDown, .leftMouseDragged, .leftMouseUp]
+            let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
+            let context = Unmanaged.passUnretained(self).toOpaque()
+            tap = CGEvent.tapCreate(
+                tap: .cgSessionEventTap,
+                place: .headInsertEventTap,
+                options: .defaultTap,
+                eventsOfInterest: mask,
+                callback: { _, _, event, context in
+                    guard let context else { return Unmanaged.passUnretained(event) }
+                    let shield = Unmanaged<ReorderEventShield>.fromOpaque(context).takeUnretainedValue()
+                    guard event.getIntegerValueField(.eventSourceUserData) == shield.token else {
+                        return Unmanaged.passUnretained(event)
+                    }
+                    // WindowServer must perform its own menu-bar hit testing.
+                    // Allow the event only while its coordinates remain inside
+                    // the narrow corridor joining the two real status items.
+                    return shield.allowedRect.contains(event.location)
+                        ? Unmanaged.passUnretained(event)
+                        : nil
+                },
+                userInfo: context
+            )
+            guard let tap else { return nil }
+            source = CFMachPortCreateRunLoopSource(nil, tap, 0)
+            guard let source else { return nil }
+            CFRunLoopAddSource(runLoop, source, .commonModes)
+            CGEvent.tapEnable(tap: tap, enable: true)
+        }
+
+        func finish() {
+            if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
+            if let source { CFRunLoopRemoveSource(runLoop, source, .commonModes) }
+            if let tap { CFMachPortInvalidate(tap) }
+        }
+    }
+
     /// Reorders one status item using events that are intercepted from the
     /// shared session stream and delivered only to the owning process.
     /// No event is allowed to reach the foreground application.
-    static func reorderTargeted(
+    static func reorderShielded(
         _ item: MenuBarItem,
         adjacentTo target: MenuBarItem,
         placeAfterTarget: Bool
@@ -147,8 +201,19 @@ enum MenuBarMoveEngine {
         guard AccessibilityResolver.isTrusted(), item.hostPID > 0,
               item.frame.width > 0, target.frame.width > 0,
               waitForUserInputToSettle(timeout: 0.8),
-              let source = CGEventSource(stateID: .privateState)
+              let cursorShield = CursorShield(),
+              let eventShield = ReorderEventShield(
+                targetPID: item.hostPID,
+                allowedRect: item.frame.union(target.frame).insetBy(dx: -8, dy: -3)
+              ),
+              let source = CGEventSource(stateID: .hidSystemState)
         else { return .failed }
+        defer {
+            eventShield.finish()
+            cursorShield.finish()
+        }
+        cursorShield.setSyntheticGestureInProgress(true)
+        defer { cursorShield.setSyntheticGestureInProgress(false) }
 
         let start = CGPoint(x: item.frame.midX, y: item.frame.midY)
         let inset = max(4, target.frame.width * 0.25)
@@ -156,31 +221,57 @@ enum MenuBarMoveEngine {
             x: placeAfterTarget ? target.frame.maxX - inset : target.frame.minX + inset,
             y: target.frame.midY
         )
-        guard let down = event(.leftMouseDown, at: start, windowID: item.windowID, targetPID: item.hostPID, source: source),
-              let up = event(.leftMouseUp, at: end, windowID: item.windowID, targetPID: item.hostPID, source: source),
-              let cleanup = event(.leftMouseUp, at: start, windowID: item.windowID, targetPID: item.hostPID, source: source)
+        guard let moved = reorderEvent(.mouseMoved, at: start, item: item, source: source, token: eventShield.token),
+              let down = reorderEvent(.leftMouseDown, at: start, item: item, source: source, token: eventShield.token),
+              let up = reorderEvent(.leftMouseUp, at: end, item: item, source: source, token: eventShield.token),
+              let cleanup = reorderEvent(.leftMouseUp, at: start, item: item, source: source, token: eventShield.token)
         else { return .failed }
 
-        guard TargetedEventRouter.route(down, through: item.hostPID) else { return .failed }
+        moved.post(tap: .cghidEventTap)
+        Thread.sleep(forTimeInterval: 0.025)
+        down.post(tap: .cghidEventTap)
+        Thread.sleep(forTimeInterval: 0.05)
         var completed = false
         defer { if !completed { cleanup.postToPid(item.hostPID) } }
-        for step in 1...12 {
-            let progress = CGFloat(step) / 12
+        for step in 1...18 {
+            guard !cursorShield.userInteracted else { return .deferredForUserInput }
+            let progress = CGFloat(step) / 18
             let point = CGPoint(
                 x: start.x + (end.x - start.x) * progress,
                 y: start.y + (end.y - start.y) * progress
             )
-            guard let dragged = event(
+            guard let dragged = reorderEvent(
                 .leftMouseDragged,
                 at: point,
-                windowID: item.windowID,
-                targetPID: item.hostPID,
-                source: source
-            ), TargetedEventRouter.route(dragged, through: item.hostPID) else { return .failed }
+                item: item,
+                source: source,
+                token: eventShield.token
+            ) else { return .failed }
+            dragged.post(tap: .cghidEventTap)
+            Thread.sleep(forTimeInterval: 0.014)
         }
-        guard TargetedEventRouter.route(up, through: item.hostPID) else { return .failed }
+        up.post(tap: .cghidEventTap)
+        Thread.sleep(forTimeInterval: 0.12)
         completed = true
-        return .moved
+        return cursorShield.userInteracted ? .deferredForUserInput : .moved
+    }
+
+    private static func reorderEvent(
+        _ type: CGEventType,
+        at point: CGPoint,
+        item: MenuBarItem,
+        source: CGEventSource,
+        token: Int64
+    ) -> CGEvent? {
+        guard let event = CGEvent(
+            mouseEventSource: source,
+            mouseType: type,
+            mouseCursorPosition: point,
+            mouseButton: .left
+        ) else { return nil }
+        event.flags = .maskCommand
+        event.setIntegerValueField(.eventSourceUserData, value: token)
+        return event
     }
 
     static func move(

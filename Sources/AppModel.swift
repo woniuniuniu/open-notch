@@ -349,13 +349,13 @@ final class AppModel: ObservableObject {
                 "Menu bar reorder persisted but live layout did not update; " +
                 "source=\(source.id); target=\(target.id); inputSynthesis=false"
             )
-            let result = MenuBarMoveEngine.reorderTargeted(
+            let result = MenuBarMoveEngine.reorderShielded(
                 liveSource,
                 adjacentTo: liveTarget,
                 placeAfterTarget: placeAfterTarget
             )
             Diagnostics.shared.append(
-                "Target-process-only reorder; source=\(source.id); target=\(target.id); " +
+                "WindowServer shielded reorder; source=\(source.id); target=\(target.id); " +
                 "result=\(String(describing: result)); foregroundDelivery=false"
             )
             if case .failed = result { self.addEvent(L("Could not reorder menu bar item")) }
