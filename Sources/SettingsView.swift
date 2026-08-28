@@ -3,6 +3,11 @@ import ServiceManagement
 import SwiftUI
 
 private enum OpenNotchTheme {
+    // macOS 27 uses noticeably softer, more continuous container geometry.
+    // Keep the hierarchy small and consistent across every settings pane.
+    static let panelCornerRadius: CGFloat = 18
+    static let controlCornerRadius: CGFloat = 12
+    static let compactCornerRadius: CGFloat = 8
     static let blue = Color(red: 0.24, green: 0.63, blue: 0.96)
     static let cyan = Color(red: 0.20, green: 0.78, blue: 0.82)
     static let magenta = Color(red: 0.93, green: 0.23, blue: 0.70)
@@ -31,7 +36,6 @@ struct SettingsRootView: View {
     var body: some View {
         ZStack {
             WindowVisualEffect()
-                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
 
             VStack(spacing: 0) {
                 CompactTopBar(showMenu: $showSettingsMenu)
@@ -40,13 +44,6 @@ struct SettingsRootView: View {
             .padding(12)
 
             if showSettingsMenu {
-                Color.black.opacity(0.001)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.easeOut(duration: 0.14)) { showSettingsMenu = false }
-                    }
-                    .zIndex(90)
-
                 SettingsQuickMenu(isPresented: $showSettingsMenu)
                     .padding(.top, 54)
                     .padding(.trailing, 17)
@@ -88,7 +85,6 @@ private struct WindowVisualEffect: NSViewRepresentable {
         view.blendingMode = .behindWindow
         view.state = .active
         view.wantsLayer = true
-        view.layer?.cornerRadius = 22
         view.layer?.borderWidth = 1
         view.layer?.borderColor = NSColor.white.withAlphaComponent(0.16).cgColor
         view.layer?.shadowColor = NSColor.black.withAlphaComponent(0.35).cgColor
@@ -102,6 +98,7 @@ private struct WindowVisualEffect: NSViewRepresentable {
 }
 
 private struct CompactTopBar: View {
+    @EnvironmentObject private var model: AppModel
     @Binding var showMenu: Bool
 
     var body: some View {
@@ -110,21 +107,20 @@ private struct CompactTopBar: View {
 
             Image(nsImage: NSApplication.shared.applicationIconImage)
                 .resizable().frame(width: 26, height: 26)
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.compactCornerRadius, style: .continuous))
 
-            Text(L("App Name"))
-                .font(.system(size: 14, weight: .semibold))
+            Text((model.selectedPane ?? .menuItems).title)
+                .font(.system(size: 13, weight: .semibold))
 
             Spacer(minLength: 0)
 
             Button { withAnimation(.easeOut(duration: 0.16)) { showMenu.toggle() } } label: {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 13, weight: .semibold))
-                    .frame(width: 34, height: 34)
-                    .contentShape(Circle())
+                    .frame(width: 29, height: 29)
             }
-            .buttonStyle(HoveringIconButtonStyle())
-            .help(L("Settings…"))
+            .buttonStyle(.plain)
+            .background(.white.opacity(0.10), in: Circle())
         }
         .padding(.horizontal, 5)
         .frame(height: 42)
@@ -135,6 +131,7 @@ private struct CompactTopBar: View {
 private struct SettingsQuickMenu: View {
     @EnvironmentObject private var model: AppModel
     @Binding var isPresented: Bool
+    @State private var hoveredMenu: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -143,16 +140,18 @@ private struct SettingsQuickMenu: View {
             menuButton(L("About"), icon: "info.circle", pane: .about)
             Divider().padding(.vertical, 3)
             Button { NSApplication.shared.terminate(nil) } label: {
-                Label(L("Quit Open Notch"), systemImage: "power")
-                    .frame(width: 144, height: 38, alignment: .leading)
-                    .padding(.horizontal, 10)
-                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                Text(L("Quit Open Notch"))
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(QuickMenuButtonStyle(isDestructive: true))
+            .buttonStyle(.plain)
+            .padding(.horizontal, 10)
+            .frame(width: 164, height: 34, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(Color.clear)
         }
         .padding(8)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.white.opacity(0.16), lineWidth: 1) }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous).stroke(.white.opacity(0.16), lineWidth: 1) }
         .shadow(color: .black.opacity(0.24), radius: 20, y: 8)
         .frame(width: 190)
     }
@@ -160,107 +159,36 @@ private struct SettingsQuickMenu: View {
     private func menuButton(_ title: String, icon: String, pane: SettingsPane) -> some View {
         Button { model.selectedPane = pane; isPresented = false } label: {
             Label(title, systemImage: icon)
-                .frame(width: 144, height: 38, alignment: .leading)
-                .padding(.horizontal, 10)
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(QuickMenuButtonStyle())
-    }
-}
-
-private struct HoveringIconButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> StyledBody {
-        StyledBody(configuration: configuration)
-    }
-
-    struct StyledBody: View {
-        let configuration: Configuration
-        @State private var hovering = false
-
-        var body: some View {
-            configuration.label
-                .background(
-                    Color.white.opacity(hovering ? 0.17 : 0.10),
-                    in: Circle()
-                )
-                .scaleEffect(configuration.isPressed ? 0.9 : 1)
-                .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-                .animation(.easeOut(duration: 0.12), value: hovering)
-                .onHover { hovering = $0 }
-        }
-    }
-}
-
-private struct QuickMenuButtonStyle: ButtonStyle {
-    var isDestructive = false
-
-    func makeBody(configuration: Configuration) -> StyledBody {
-        StyledBody(configuration: configuration, isDestructive: isDestructive)
-    }
-
-    struct StyledBody: View {
-        let configuration: Configuration
-        let isDestructive: Bool
-        @State private var hovering = false
-
-        var body: some View {
-            configuration.label
-                .foregroundStyle(isDestructive && hovering ? Color.red : Color.primary)
-                .background(
-                    hovering
-                        ? (isDestructive ? Color.red.opacity(0.13) : Color.primary.opacity(0.10))
-                        : .clear,
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                )
-                .scaleEffect(configuration.isPressed ? 0.975 : 1)
-                .brightness(configuration.isPressed ? -0.08 : 0)
-                .animation(.easeOut(duration: 0.12), value: hovering)
-                .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
-                .onHover { hovering = $0 }
-        }
-    }
-}
-
-private struct HoveringCapsuleButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> StyledBody {
-        StyledBody(configuration: configuration)
-    }
-
-    struct StyledBody: View {
-        let configuration: Configuration
-        @State private var hovering = false
-
-        var body: some View {
-            configuration.label
-                .background(
-                    hovering ? Color.primary.opacity(0.08) : .clear,
-                    in: Capsule()
-                )
-                .scaleEffect(configuration.isPressed ? 0.94 : 1)
-                .animation(.easeOut(duration: 0.1), value: hovering)
-                .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
-                .onHover { hovering = $0 }
-        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .frame(width: 164, height: 34, alignment: .leading)
+        .contentShape(Rectangle())
+        .onHover { hoveredMenu = $0 ? pane.id : nil }
+        .background(hoveredMenu == pane.id ? Color.primary.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
     }
 }
 
 private struct WindowControlButtons: View {
     @State private var hovering = false
+    @State private var hostWindow: NSWindow?
 
     var body: some View {
         HStack(spacing: 7) {
             control(color: Color(red: 1, green: 0.37, blue: 0.34), symbol: "xmark") {
-                closeSettingsWindow()
+                hostWindow?.orderOut(nil)
             }
             control(color: Color(red: 1, green: 0.74, blue: 0.18), symbol: "minus") {
-                NSApp.keyWindow?.miniaturize(nil)
+                hostWindow?.miniaturize(nil)
             }
             control(color: Color(red: 0.20, green: 0.78, blue: 0.35), symbol: "arrow.up.left.and.arrow.down.right") {
-                NSApp.keyWindow?.zoom(nil)
+                hostWindow?.zoom(nil)
             }
         }
         .padding(.horizontal, 3)
         .onHover { hovering = $0 }
+        .background(WindowReader { hostWindow = $0 })
     }
 
     private func control(color: Color, symbol: String, action: @escaping () -> Void) -> some View {
@@ -279,11 +207,138 @@ private struct WindowControlButtons: View {
         .buttonStyle(.plain)
     }
 
-    private func closeSettingsWindow() {
-        let window = NSApp.windows.first {
-            $0.identifier?.rawValue == "OpenNotch.Settings"
+}
+
+private struct WindowReader: NSViewRepresentable {
+    let onResolve: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async { onResolve(view.window) }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async { onResolve(view.window) }
+    }
+}
+
+private struct AppChromeBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ZStack {
+            Rectangle().fill(.clear)
         }
-        window?.performClose(self)
+        .ignoresSafeArea()
+    }
+}
+
+private struct AppSidebar: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.colorScheme) private var colorScheme
+    @Namespace private var selectionNamespace
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable()
+                    .frame(width: 30, height: 30)
+                    .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(L("App Name"))
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(L("Menu Bar"))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 18)
+            .padding(.bottom, 20)
+
+            VStack(spacing: 5) {
+                ForEach(SettingsPane.allCases) { pane in
+                    Button {
+                        model.selectedPane = pane
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: pane.symbolName)
+                                .font(.system(size: 13, weight: .semibold))
+                                .frame(width: 19)
+                                .foregroundStyle(
+                                    model.selectedPane == pane ? OpenNotchTheme.cyan : Color.secondary
+                                )
+
+                            Text(pane.title)
+                                .font(.system(size: 13, weight: model.selectedPane == pane ? .semibold : .medium))
+                                .foregroundStyle(.primary)
+
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 11)
+                        .frame(height: 36)
+                        .background {
+                            if model.selectedPane == pane {
+                                RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous)
+                                    .fill(OpenNotchTheme.blue.opacity(colorScheme == .dark ? 0.20 : 0.13))
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous)
+                                            .stroke(OpenNotchTheme.blue.opacity(0.28), lineWidth: 1)
+                                    }
+                                    .matchedGeometryEffect(id: "sidebarSelection", in: selectionNamespace)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+
+            Spacer()
+
+            SidebarStatus()
+                .padding(12)
+        }
+        .background(.thinMaterial.opacity(0.42))
+    }
+}
+
+private struct SidebarStatus: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Circle()
+                .fill(model.hasAccessibilityPermission ? OpenNotchTheme.green : OpenNotchTheme.yellow)
+                .frame(width: 7, height: 7)
+                .shadow(
+                    color: (model.hasAccessibilityPermission ? OpenNotchTheme.green : OpenNotchTheme.yellow).opacity(0.5),
+                    radius: 5
+                )
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(model.hasAccessibilityPermission ? L("Authorized") : L("Not Authorized"))
+                    .font(.caption.weight(.semibold))
+                Text(L("Accessibility"))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 11)
+        .frame(height: 48)
+        .background(OpenNotchTheme.panelFill(for: colorScheme))
+        .overlay {
+            RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous)
+                .stroke(OpenNotchTheme.hairline(for: colorScheme), lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous))
     }
 }
 
@@ -379,11 +434,89 @@ private struct GlassPanel<Content: View>: View {
         }
         .background(OpenNotchTheme.panelFill(for: colorScheme))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous)
                 .stroke(OpenNotchTheme.hairline(for: colorScheme), lineWidth: 1)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.panelCornerRadius, style: .continuous))
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.18 : 0.07), radius: 14, y: 7)
+    }
+}
+
+private struct StatusGauge: View {
+    let visible: Int
+    let hidden: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var progress = 0.0
+
+    private var targetProgress: Double {
+        let total = max(visible + hidden, 1)
+        return Double(visible) / Double(total)
+    }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .trim(from: 0.08, to: 0.92)
+                .stroke(Color.secondary.opacity(0.15), style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                .rotationEffect(.degrees(90))
+
+            Circle()
+                .trim(from: 0.08, to: 0.08 + (0.84 * progress))
+                .stroke(OpenNotchTheme.yellow, style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                .rotationEffect(.degrees(90))
+
+            Circle()
+                .trim(from: 0.08, to: 0.08 + (0.84 * min(progress, 0.54)))
+                .stroke(OpenNotchTheme.magenta, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                .rotationEffect(.degrees(90))
+                .padding(12)
+
+            VStack(spacing: 0) {
+                Text("\(visible)")
+                    .font(.system(size: 25, weight: .bold, design: .rounded))
+                    .contentTransition(.numericText())
+                Text(L("Visible"))
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 124, height: 124)
+        .onAppear {
+            if reduceMotion {
+                progress = targetProgress
+            } else {
+                withAnimation(.spring(response: 0.72, dampingFraction: 0.78)) {
+                    progress = targetProgress
+                }
+            }
+        }
+        .onChange(of: targetProgress) { _, value in
+            withAnimation(reduceMotion ? nil : .spring(response: 0.58, dampingFraction: 0.82)) {
+                progress = value
+            }
+        }
+    }
+}
+
+private struct MetricLine: View {
+    let color: Color
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+            Spacer()
+            Text(value)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .contentTransition(.numericText())
+        }
+        .frame(height: 24)
     }
 }
 
@@ -462,10 +595,9 @@ private struct MenuItemsPane: View {
         PageScaffold(title: L("Menu Bar Items"), subtitle: LF("%d manageable items", model.filteredItems.count)) {
             AIOrganizerSection()
 
-            if !model.hasAccessibilityPermission {
+            if !model.canManageMenuBar {
                 PermissionBanner()
-            }
-
+            } else {
                 HStack(spacing: 9) {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
@@ -477,13 +609,13 @@ private struct MenuItemsPane: View {
                     .frame(height: 34)
                     .background(.thinMaterial)
                     .overlay {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous)
                             .stroke(.separator.opacity(0.55), lineWidth: 1)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
 
-                Button {
-                    model.refresh(reason: L("Manual scan"), reconcile: false, showsProgress: true)
+                    Button {
+                        model.refresh(reason: L("Manual scan"), reconcile: false)
                     } label: {
                         if model.isScanning {
                             ProgressView()
@@ -503,7 +635,7 @@ private struct MenuItemsPane: View {
                             ContentUnavailableView(L("No manageable items"), systemImage: "menubar.rectangle")
                             Button(L("Scan Now")) {
                                 model.searchText = ""
-                                model.refresh(reason: L("Manual scan"), reconcile: false, showsProgress: true)
+                                model.refresh(reason: L("Manual scan"), reconcile: false)
                             }
                             .systemGlassButton(prominent: true)
                         }
@@ -519,18 +651,85 @@ private struct MenuItemsPane: View {
                         .frame(maxWidth: .infinity, minHeight: 180)
                     }
                 } else {
-                    GlassPanel(title: L("Manual Management"), systemImage: "slider.horizontal.3", accent: OpenNotchTheme.blue) {
-                        LazyVStack(spacing: 0) {
-                            ForEach(Array(model.filteredItems.enumerated()), id: \.element.id) { index, item in
-                                MenuItemRow(item: item)
-                                if index < model.filteredItems.count - 1 {
-                                    Divider()
-                                        .opacity(0.55)
+                    if !model.filteredVisibleItems.isEmpty {
+                        GlassPanel(
+                            title: LF("Visible Items (%d)", model.filteredVisibleItems.count),
+                            systemImage: "eye.fill",
+                            accent: OpenNotchTheme.cyan
+                        ) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(L("Drag the handle to reorder visible menu bar items."))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                LazyVStack(spacing: 0) {
+                                    ForEach(Array(model.filteredVisibleItems.enumerated()), id: \.element.id) { index, item in
+                                        MenuItemRow(item: item, allowsReordering: true)
+                                        if index < model.filteredVisibleItems.count - 1 {
+                                            Divider().opacity(0.55)
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
+
+                    if !model.filteredHiddenItems.isEmpty {
+                        GlassPanel(
+                            title: LF("Hidden Items (%d)", model.filteredHiddenItems.count),
+                            systemImage: "eye.slash.fill",
+                            accent: Color.gray
+                        ) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(L("Hidden items keep their previous positions and do not participate in sorting."))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                LazyVStack(spacing: 0) {
+                                    ForEach(Array(model.filteredHiddenItems.enumerated()), id: \.element.id) { index, item in
+                                        MenuItemRow(item: item, allowsReordering: false)
+                                        if index < model.filteredHiddenItems.count - 1 {
+                                            Divider().opacity(0.55)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if !model.filteredInactiveItems.isEmpty {
+                        GlassPanel(
+                            title: LF("Not Running (%d)", model.filteredInactiveItems.count),
+                            systemImage: "moon.zzz.fill",
+                            accent: OpenNotchTheme.yellow
+                        ) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(L("These are saved historical items. They will return to the visible section when their apps run again."))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                LazyVStack(spacing: 0) {
+                                    ForEach(Array(model.filteredInactiveItems.enumerated()), id: \.element.id) { index, item in
+                                        MenuItemRow(item: item, allowsReordering: false)
+                                        if index < model.filteredInactiveItems.count - 1 {
+                                            Divider().opacity(0.55)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if model.filteredVisibleItems.isEmpty && !model.filteredHiddenItems.isEmpty {
+                        GlassPanel {
+                            HStack(spacing: 10) {
+                                Image(systemName: "info.circle")
+                                    .foregroundStyle(OpenNotchTheme.blue)
+                                Text(L("Show an item to return it to its previous position and make it sortable again."))
+                                    .font(.caption)
+                                Spacer()
+                            }
+                        }
+                    }
                 }
+            }
         }
     }
 }
@@ -540,10 +739,30 @@ private struct MenuItemRow: View {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var settings = SettingsStore.shared
     @State private var isHovering = false
+    @State private var isDropTargeted = false
     let item: MenuBarItem
+    let allowsReordering: Bool
 
     var body: some View {
         HStack(spacing: 11) {
+            if MenuBarAgentBridge.isAvailable && allowsReordering {
+                HStack(spacing: 0) {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 22, height: 40)
+                        .contentShape(Rectangle())
+                        .help(L("Drag to reorder"))
+                        .accessibilityLabel(L("Drag to reorder"))
+
+                    VStack(spacing: 0) {
+                        reorderButton("chevron.up", offset: -1, help: L("Move Up"))
+                        reorderButton("chevron.down", offset: 1, help: L("Move Down"))
+                    }
+                }
+                .frame(width: 48, height: 52)
+            }
+
             MenuItemIcon(item: item)
                 .frame(width: 28, height: 28)
 
@@ -560,25 +779,71 @@ private struct MenuItemRow: View {
 
             Spacer(minLength: 12)
 
-            VisibilityControl(selection: Binding(
-                get: { model.disposition(for: item) },
-                set: { model.setDisposition($0, for: item) }
-            ))
+            if !item.isOpenNotchControl {
+                VisibilityControl(selection: Binding(
+                    get: { model.disposition(for: item) },
+                    set: { model.setDisposition($0, for: item) }
+                ))
+            }
         }
         .padding(.horizontal, 7)
-        .frame(height: 52)
-        .background(isHovering ? OpenNotchTheme.hoverFill(for: colorScheme) : .clear)
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .frame(height: 60)
+        .background((isHovering || isDropTargeted) ? OpenNotchTheme.hoverFill(for: colorScheme) : .clear)
+        .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
+        .contentShape(Rectangle())
+        .modifier(MenuRowDragModifier(enabled: MenuBarAgentBridge.isAvailable && allowsReordering, item: item))
         .onHover { isHovering = $0 }
+        .dropDestination(for: String.self) { sourceIDs, _ in
+            guard MenuBarAgentBridge.isAvailable, allowsReordering, let sourceID = sourceIDs.first else {
+                return false
+            }
+            model.reorderMenuBarItem(sourceID: sourceID, targetID: item.id)
+            return true
+        } isTargeted: { targeted in
+            isDropTargeted = targeted
+        }
         .accessibilityElement(children: .contain)
     }
 
     private var secondaryText: String {
-        let description = settings.aiDescription(for: item.id, language: settings.language)
+        settings.aiDescription(for: item.id, language: settings.language)
             ?? (item.detail.isEmpty ? item.semanticBundleIdentifier : item.detail)
-        return model.isItemCurrentlyAvailable(item)
-            ? description
-            : "\(L("Not Running")) · \(description)"
+    }
+
+    private func reorderButton(_ symbol: String, offset: Int, help: String) -> some View {
+        Button {
+            model.moveMenuBarItem(item.id, offset: offset)
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 25)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+private struct MenuRowDragModifier: ViewModifier {
+    let enabled: Bool
+    let item: MenuBarItem
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            content.draggable(item.id) {
+                HStack(spacing: 8) {
+                    MenuItemIcon(item: item)
+                    Text(item.displayName).font(.system(size: 13, weight: .semibold))
+                }
+                .padding(9)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
+            }
+        } else {
+            content
+        }
     }
 }
 
@@ -593,7 +858,7 @@ private struct VisibilityControl: View {
             option(.visible, symbol: "eye.fill", tint: OpenNotchTheme.cyan)
             option(.hidden, symbol: "eye.slash.fill", tint: Color.gray)
         }
-        .padding(3)
+        .padding(4)
         .background(.black.opacity(0.13), in: Capsule())
         .overlay { Capsule().stroke(.white.opacity(0.08), lineWidth: 1) }
         .opacity(isEnabled ? 1 : 0.45)
@@ -608,10 +873,10 @@ private struct VisibilityControl: View {
             }
         } label: {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(selection == disposition ? Color.white : Color.secondary)
-                .frame(width: 36, height: 29)
-                .contentShape(Capsule())
+                .frame(width: 44, height: 34)
+                .contentShape(Rectangle())
                 .background {
                     if selection == disposition {
                         Capsule()
@@ -621,7 +886,7 @@ private struct VisibilityControl: View {
                     }
                 }
         }
-        .buttonStyle(HoveringCapsuleButtonStyle())
+        .buttonStyle(.plain)
         .help(disposition.title)
         .accessibilityLabel(disposition.title)
         .accessibilityAddTraits(selection == disposition ? .isSelected : [])
@@ -638,16 +903,16 @@ private struct MenuItemIcon: View {
                     .resizable()
                     .scaledToFit()
             } else if item.symbolName == "app.dashed" {
-                Image(nsImage: NSApplication.shared.applicationIconImage)
-                    .resizable()
-                    .scaledToFit()
-                    .opacity(0.65)
+                Image(systemName: "app.dashed")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.secondary)
             } else {
                 Image(systemName: item.symbolName)
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(.secondary)
             }
         }
+        .frame(width: 20, height: 20)
     }
 }
 
@@ -679,7 +944,7 @@ private struct AIOrganizerSection: View {
                                     in: Capsule()
                                 )
                             }
-                            .buttonStyle(HoveringCapsuleButtonStyle())
+                            .buttonStyle(.plain)
                         }
                     }
 
@@ -766,7 +1031,7 @@ private struct AIRequestProgressView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
     }
 }
 
@@ -824,7 +1089,7 @@ private struct AIBeforeAfterPreview: View {
             }
         }
         .padding(9)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
     }
 }
 
@@ -850,17 +1115,10 @@ private struct GeneralPane: View {
                     }
                     Divider().opacity(0.55)
                     SettingsLine(L("Appearance"), systemImage: "circle.lefthalf.filled", tint: OpenNotchTheme.magenta) {
-                        Picker("", selection: Binding(
-                            get: { settings.appearanceMode },
-                            set: { model.setAppearance($0) }
-                        )) {
-                            ForEach(AppearanceMode.allCases) { mode in
-                                Text(mode.title).tag(mode)
-                            }
+                        AppearanceModeControl(selection: settings.appearanceMode) {
+                            model.setAppearance($0)
                         }
-                        .labelsHidden()
-                        .pickerStyle(.segmented)
-                        .frame(width: 150)
+                        .padding(.trailing, 28)
                     }
                 }
             }
@@ -902,32 +1160,26 @@ private struct GeneralPane: View {
             }
 
             GlassPanel(title: L("Displays"), systemImage: "display.2", accent: OpenNotchTheme.blue) {
-                VStack(spacing: 0) {
-                    SettingsLine(
-                        L("External Display"),
-                        subtitle: model.hasExternalDisplay
-                            ? (model.mainDisplayIsExternal ? L("External display is currently primary") : L("Built-in display is currently primary"))
-                            : L("No external display detected"),
-                        systemImage: model.hasExternalDisplay ? "display.2" : "laptopcomputer",
-                        tint: model.hasExternalDisplay ? OpenNotchTheme.green : OpenNotchTheme.cyan
-                    ) {
-                        Picker("", selection: Binding(
-                            get: { settings.externalDisplayMode },
-                            set: { model.setExternalDisplayMode($0) }
-                        )) {
-                            ForEach(ExternalDisplayMode.allCases) { mode in
-                                Text(mode.title).tag(mode)
-                            }
+                SettingsLine(
+                    L("External Display"),
+                    subtitle: model.hasExternalDisplay
+                        ? (model.mainDisplayIsExternal
+                            ? L("External display is currently primary")
+                            : L("Built-in display is currently primary"))
+                        : L("No external display detected"),
+                    systemImage: model.hasExternalDisplay ? "display.2" : "laptopcomputer",
+                    tint: model.hasExternalDisplay ? OpenNotchTheme.green : OpenNotchTheme.cyan
+                ) {
+                    Picker("", selection: Binding(
+                        get: { settings.externalDisplayMode },
+                        set: { model.setExternalDisplayMode($0) }
+                    )) {
+                        ForEach(ExternalDisplayMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
                         }
-                        .labelsHidden()
-                        .frame(width: 190)
                     }
-                    Divider().opacity(0.55)
-                    Text(L("Show All reveals every managed icon when an external display is the primary display. The compact layout returns automatically when the built-in display becomes primary."))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 10)
+                    .labelsHidden()
+                    .frame(width: 190)
                 }
             }
 
@@ -947,6 +1199,37 @@ private struct GeneralPane: View {
                 }
             }
         }
+    }
+}
+
+private struct AppearanceModeControl: View {
+    let selection: AppearanceMode
+    let onSelect: (AppearanceMode) -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(AppearanceMode.allCases) { mode in
+                Button { onSelect(mode) } label: {
+                    Text(mode.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .frame(width: 50, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(selection == mode ? Color.primary : Color.secondary)
+                .background {
+                    if selection == mode {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.primary.opacity(0.13))
+                            .shadow(color: .black.opacity(0.12), radius: 1, y: 1)
+                    }
+                }
+            }
+        }
+        .padding(2)
+        .frame(width: 154, height: 28)
+        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

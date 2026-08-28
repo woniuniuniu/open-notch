@@ -51,10 +51,9 @@ No Bartender source code or proprietary asset is included in this repository.
 
 ## macOS 27 MenuBarAgent compatibility
 
-The macOS 27 Accessibility inventory and MenuBarAgent visibility bridge in
-`AccessibilityResolver.swift`, `MacOS27VisibilityBridge.m`, and
-`MacOS27VisibilityController.swift` were independently implemented for Open
-Notch from runtime inspection of the operating system. They use undocumented
-Apple frameworks and selectors, contain no Apple source code, and are provided
+The macOS 27 Accessibility inventory and MenuBarAgent compatibility path in
+`Sources/MenuBarAgentBridge.swift` was independently implemented for Open
+Notch from runtime inspection of the operating system. It uses undocumented
+Apple frameworks and selectors, contains no Apple source code, and is provided
 under GPL-3.0-only. Apple may change or remove this compatibility path in later
 macOS releases.

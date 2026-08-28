@@ -5,9 +5,9 @@
 [![macOS](https://img.shields.io/badge/macOS-14%2B-111111?logo=apple)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5-FA7343?logo=swift&logoColor=white)](https://www.swift.org/)
 [![License](https://img.shields.io/badge/license-GPL--3.0-only-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.7.4-2ea44f)](https://github.com/woniuniuniu/open-notch)
+[![Version](https://img.shields.io/badge/version-0.8.1-2ea44f)](https://github.com/woniuniuniu/open-notch)
 
-**整理你的 Mac 菜单栏。完全开源、原生，也为 macOS 27 做好准备。**
+**整理你的 Mac 菜单栏。开源、原生，也能把 OneDrive 稳稳钉住。**
 
 Open Notch 是一个完全开源的 **Mac 菜单栏管理工具**。它可以隐藏、显示和整理菜单栏图标，让常用图标留在该在的位置，让你的 Mac 顶栏重新变得干净、好用。
 
@@ -19,12 +19,12 @@ Open Notch 是一个完全开源的 **Mac 菜单栏管理工具**。它可以隐
 
 <table>
   <tr>
+    <td width="50%"><img src="docs/images/open-notch-overview-zh.png" alt="Open Notch 中文总览" /></td>
     <td width="50%"><img src="docs/images/open-notch-menu-items-zh.png" alt="Open Notch 中文菜单栏图标管理" /></td>
-    <td width="50%"><img src="docs/images/open-notch-general-dark-en.png" alt="Open Notch 英文深色通用设置" /></td>
   </tr>
   <tr>
-    <td align="center">图标与 AI 整理</td>
-    <td align="center">通用设置 · 深色模式</td>
+    <td align="center">总览</td>
+    <td align="center">菜单栏图标管理</td>
   </tr>
 </table>
 
@@ -38,7 +38,7 @@ Open Notch 是一个完全开源的 **Mac 菜单栏管理工具**。它可以隐
 
 我们用 AI，从零 vibe coding 了 Open Notch 的主体功能。代码公开、问题公开、路线也公开。任何人都可以免费使用，也可以一起改进。它要做的第一件事，就是让普通用户可以简单地隐藏、显示和整理自己的菜单栏图标。
 
-第二个问题来自 OneDrive。我自己长期使用 OneDrive，但它的菜单栏图标经常跳来跳去：有时被隐藏，有时又自己跑出来，很多菜单栏工具都无法稳定识别。所以我们在底层为 OneDrive 做了稳定身份与自动重绑定。界面上它和其他 App 完全一样：选择显示就持续显示，选择隐藏就持续隐藏。
+第二个问题来自 OneDrive。我自己长期使用 OneDrive，但它的菜单栏图标经常跳来跳去：有时被隐藏，有时又自己跑出来，很多菜单栏工具都无法稳定识别。所以我们又做了 OneDrive 守护功能，尽可能把它“锁”在菜单栏里。
 
 这只是开始。只要大家愿意提需求、报问题，我们就会继续更新。目标也很直接：**把 Open Notch 做成世界上最好用的开源 Mac 菜单栏管理工具。**
 
@@ -55,32 +55,32 @@ Open Notch 是独立实现，不是 Bartender 或 Ice 的官方版本，也不�
 
 ## 功能
 
-- 菜单栏项目发现、搜索以及显示 / 隐藏管理。
-- 长期项目库：保留这台 Mac 历史上出现过的第三方菜单栏 App；App 未运行时也能提前设置，退出重开后继续生效。
-- 左键点击顶部箭头，打开一条横向毛玻璃 Bar 查看隐藏项目；右键打开扫描、设置、诊断、重启和退出菜单。
-- AI 整理：根据 Mac 型号、屏幕尺寸、系统版本和当前项目生成均衡 / 极简两套方案，支持预览与撤销。
-- OneDrive 使用稳定身份与自动重绑定，前端不设特殊开关。
-- 内建屏与外接显示器可以使用不同显示策略。
+- 菜单栏项目发现、搜索以及 Visible / Hidden 管理。
+- 历史项目管理：即使应用当前没有运行，也可以提前配置它的显示状态。
+- 隐藏区展开、收起和恢复。
+- OneDrive 使用稳定的 Bundle ID 进行识别和持续同步，前端与其他 App 一视同仁。
+- 菜单栏图标菜单：展开隐藏区、扫描项目、打开设置、重启 Open Notch、退出。
 - 默认英文，可手动切换简体中文。
 - Light / Dark 外观模式。
 - 登录时打开与自动恢复菜单栏布局。
+- 外接显示器模式：外接屏可选择显示全部项目或沿用内建屏布局。
 - 辅助功能权限状态检查和系统设置快捷入口。
 
 在 Apple 的官方语境里，Mac 屏幕顶部叫 **菜单栏（menu bar）**，右侧这些图标叫 **菜单栏项目（menu bar items）**。中文用户也常把它叫作状态栏或顶栏，所以你也可以把 Open Notch 理解为 Mac 状态栏图标管理工具。
 
 ## 工作方式
 
-Open Notch 的持续监测负责**观察**菜单栏项目，并把确认过的第三方 App 身份与显示策略保存在本机。macOS 27 上，图标身份直接来自每个 App 的 `AXExtrasMenuBar`，显示与隐藏由 MenuBarAgent 可见性断言完成，整个过程不移动、也不模拟鼠标。macOS 14–26 继续使用旧版兼容布局引擎；只有明确改变项目位置且系统没有其他可用路径时，才会执行一次有界的定向移动。
+Open Notch 的持续监测负责**观察**菜单栏项目；布局协调器只有在连续观察确认布局偏差后，才会请求移动。移动使用一次范围明确的 Accessibility Command-拖动事务，并在用户正在使用鼠标或键盘时延后。监测本身不会持续控制鼠标，也不会模拟随机鼠标移动。
 
 macOS 26 中，OneDrive 的状态项可能暂时由 Control Center 托管并失去稳定的 Accessibility 语义。Open Notch 会结合 OneDrive 的语义 Bundle Identifier、实时几何位置和本地持久绑定恢复逻辑身份；无法确认身份的匿名 Control Center 窗口不会被伪装成可管理项目。
 
 ## 使用要求
 
 - Apple silicon Mac
-- macOS 14 或更高版本（已在 macOS 26 与 macOS 27 真机验证）
+- macOS 14 或更高版本（已针对 macOS 26 进行验证）
 - 在“系统设置 > 隐私与安全性 > 辅助功能”中允许 Open Notch
 
-辅助功能权限是 macOS 允许应用读取其他进程菜单栏项目的系统入口。Open Notch 不会借此读取键盘内容、持续记录鼠标轨迹或读取其他应用的文档内容。
+辅助功能权限是 macOS 允许应用读取其他进程菜单栏项目并执行明确拖动事务的系统入口。Open Notch 不会借此读取键盘内容、鼠标轨迹或其他应用的数据。
 
 ## 安装与首次运行
 
@@ -92,7 +92,7 @@ cd open-notch
 ./build.sh
 ```
 
-脚本会生成 `build/Open Notch.app`、`build/Open Notch.zip` 和可直接转发给朋友的 `build/Open Notch 0.7.4.dmg`。将 App 移到 `/Applications` 后启动，在系统设置中授予辅助功能权限，再回到 Open Notch 的 General / 通用页面点击 **Recheck / 重新检查**。
+脚本会生成 `build/Open Notch.app` 和 `build/Open Notch.zip`。将 App 移到 `/Applications` 后启动，在系统设置中授予辅助功能权限，再回到 Open Notch 的 General / 通用页面点击 **Recheck / 重新检查**。
 
 本地构建使用 ad-hoc 签名，仅适合开发和个人测试。面向其他用户分发时，需要使用自己的 Developer ID 签名并完成 Apple notarization。
 
@@ -122,7 +122,7 @@ build.sh                          可复现构建、签名与打包
 
 ## 隐私与安全
 
-Open Notch 不收集分析数据、不包含遥测或账号系统。设置和身份绑定只保存在本机 `UserDefaults`。AI 整理仅在用户主动点击生成时请求项目自带的 AI 服务，并发送匿名安装 ID、应用语言、时区偏移、Mac 型号标识、屏幕几何信息、macOS 版本，以及已扫描项目的名称、Bundle ID 和显示状态；不会发送设备序列号、屏幕内容、用户名或文件路径。普通菜单栏管理不联网。辅助功能仅用于发现菜单栏项目和读取必要的几何信息。
+Open Notch 的菜单栏管理完全在本机完成，不收集分析数据、不包含遥测或账号系统。只有用户主动点击 AI Organizer 的 Generate 时，应用才会向现有 AI 服务发送匿名安装 ID、语言、时区偏移、硬件型号、显示器几何信息，以及菜单栏项目名称、Bundle ID 和显示状态。不会发送序列号、屏幕内容、用户名或文件路径。设置和身份绑定保存在本机 `UserDefaults`。辅助功能仅用于发现菜单栏项目、读取必要的窗口几何信息，以及执行明确的兼容操作。
 
 请不要在 issue 或 pull request 中上传 Accessibility dump、屏幕截图、个人路径、凭据或其他机器特有信息。安全问题请参阅 [`SECURITY.md`](SECURITY.md)。
 
@@ -139,13 +139,13 @@ Open Notch 不收集分析数据、不包含遥测或账号系统。设置和身
 
 这是 macOS 对跨进程状态栏项目观察和拖动操作的系统授权。没有授权时，Open Notch 只能展示设置界面，不能可靠地管理其他应用的图标。
 
-### Open Notch 会控制鼠标吗？
+### Open Notch 会一直控制鼠标吗？
 
-macOS 27 上完全不会：发现、隐藏与恢复均不合成鼠标事件。macOS 14–26 的旧系统兼容路径仍可能在明确切换布局时执行一次有界的 Command-拖动。
+不会。只读发现和监测不合成鼠标事件；只有布局偏差被确认、且用户没有正在交互时，才会执行一次有界的 Command-拖动。
 
-### 为什么 OneDrive 在界面里没有特殊开关？
+### 为什么 OneDrive 需要单独处理？
 
-新版 macOS 可能让 OneDrive 菜单栏项的窗口编号和标题不断变化。Open Notch 在底层用语义身份和持久绑定恢复它，但前端仍把 OneDrive 当成普通 App：显示或隐藏都由同一个按钮控制。
+新版 macOS 可能让 OneDrive 菜单栏项由 Control Center 动态托管，窗口编号和标题会变化。Open Notch 用语义身份和持久绑定恢复它，而不是把临时窗口当成新项目。
 
 ### 可以和 Ice 或 Bartender 一起运行吗？
 
