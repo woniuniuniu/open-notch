@@ -172,4 +172,9 @@ Bartender is proprietary software and is referenced only as product inspiration.
 
 Issues, documentation improvements, and pull requests are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md), [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md), and [`NOTICE.md`](NOTICE.md) first.
 
+Important contributors to the macOS 27 menu bar compatibility work:
+
+- [Joshua2046c](https://github.com/Joshua2046c): MenuBarAgent discovery, visibility, ordering, and settings interaction fixes.
+- Li Shanying Joshua (Xiaohongshu): Simplified Chinese localization.
+
 Repository: https://github.com/woniuniuniu/open-notch
