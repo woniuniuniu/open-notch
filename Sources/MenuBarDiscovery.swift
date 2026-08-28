@@ -257,7 +257,6 @@ enum MenuBarDiscovery {
         semanticIdentifier: String,
         title: String
     ) -> String {
-        if semanticBundleIdentifier == "com.microsoft.OneDrive" { return "cloud.fill" }
         let known: [String: String] = [
             "com.apple.menuextra.battery": "battery.75percent",
             "com.apple.menuextra.clock": "clock",

@@ -96,8 +96,8 @@ struct GuardianEvent: Identifiable, Equatable {
 
 enum SettingsPane: String, CaseIterable, Identifiable {
     case menuItems
-    case oneDrive
     case general
+    case oneDrive
     case about
 
     var id: String { rawValue }

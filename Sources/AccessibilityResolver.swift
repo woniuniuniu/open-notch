@@ -27,6 +27,7 @@ enum AccessibilityResolver {
             "com.apple.systemuiserver",
             "com.apple.TextInputMenuAgent",
             "com.apple.Spotlight",
+            "com.apple.weather.menu",
         ]
 
         for app in NSWorkspace.shared.runningApplications {
@@ -84,6 +85,7 @@ enum AccessibilityResolver {
         let requiredSystemAgents: Set<String> = [
             "com.apple.controlcenter", "com.apple.systemuiserver",
             "com.apple.TextInputMenuAgent", "com.apple.Spotlight",
+            "com.apple.weather.menu",
         ]
         for app in NSWorkspace.shared.runningApplications {
             guard let bundleIdentifier = app.bundleIdentifier else { continue }

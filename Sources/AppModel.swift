@@ -301,6 +301,19 @@ final class AppModel: ObservableObject {
             placeAfterTarget: placeAfterTarget,
             liveOrder: physicalItems.map(\.semanticIdentifier)
         ) else {
+            if source.semanticBundleIdentifier == "com.apple.weather.menu"
+                || target.semanticBundleIdentifier == "com.apple.weather.menu" {
+                let result = MenuBarMoveEngine.reorder(
+                    source,
+                    adjacentTo: target,
+                    placeAfterTarget: placeAfterTarget
+                )
+                Diagnostics.shared.append("Weather direct reorder result=\(String(describing: result))")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                    self?.refresh(reason: L("Manual reorder"), reconcile: false)
+                }
+                return
+            }
             Diagnostics.shared.append("MenuBarAgent reorder failed; source=\(source.id); target=\(target.id)")
             addEvent(L("Could not reorder menu bar item"))
             return

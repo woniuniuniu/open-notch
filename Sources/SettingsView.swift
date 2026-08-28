@@ -117,10 +117,12 @@ private struct CompactTopBar: View {
             Button { withAnimation(.easeOut(duration: 0.16)) { showMenu.toggle() } } label: {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 13, weight: .semibold))
-                    .frame(width: 29, height: 29)
+                    .frame(width: 36, height: 36)
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .background(.white.opacity(0.10), in: Circle())
+            .contentShape(Circle())
         }
         .padding(.horizontal, 5)
         .frame(height: 42)
@@ -136,8 +138,8 @@ private struct SettingsQuickMenu: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             menuButton(L("Menu Bar Items"), icon: "menubar.rectangle", pane: .menuItems)
-            menuButton(L("OneDrive"), icon: "cloud.fill", pane: .oneDrive)
             menuButton(L("General"), icon: "slider.horizontal.3", pane: .general)
+            menuButton(L("OneDrive"), icon: "cloud.fill", pane: .oneDrive)
             menuButton(L("About"), icon: "info.circle", pane: .about)
             Divider().padding(.vertical, 3)
             Button { NSApplication.shared.terminate(nil) } label: {

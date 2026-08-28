@@ -26,6 +26,26 @@ enum MenuBarAgentBridge {
         if let ownItem = openNotchToggleItem(in: extras) {
             result.append(ownItem)
         }
+        // Weather is an independent system status item on macOS 27 and is not
+        // represented in TrailingItemPreferredPositions. Add its real AX item
+        // so it can still be hidden and physically reordered like other extras.
+        if !result.contains(where: { $0.semanticBundleIdentifier == "com.apple.weather.menu" }),
+           let weather = extras.first(where: { $0.bundleIdentifier == "com.apple.weather.menu" }) {
+            let key = "status:com.apple.weather.menu::Weather"
+            let weatherWindow = MenuBarDiscovery.closestStatusWindow(to: weather.frame)
+            let weatherPID = NSWorkspace.shared.runningApplications.first {
+                $0.bundleIdentifier == weather.bundleIdentifier
+            }?.processIdentifier ?? weatherWindow?.hostPID ?? 0
+            result.append(MenuBarItem(
+                id: "agent:\(key)", windowID: weatherWindow?.windowID ?? syntheticWindowID(for: key),
+                hostPID: weatherPID,
+                hostBundleIdentifier: weather.bundleIdentifier,
+                semanticBundleIdentifier: weather.bundleIdentifier,
+                semanticIdentifier: key, rawTitle: weather.identifier.isEmpty ? "Weather" : weather.identifier,
+                displayName: L("Weather"), symbolName: "cloud.sun.fill",
+                frame: weather.frame, isProtected: false
+            ))
+        }
         return result.sorted { $0.frame.minX < $1.frame.minX }
     }
 
@@ -236,7 +256,6 @@ enum MenuBarAgentBridge {
     }
 
     private static func symbolName(for bundleID: String, itemID: String) -> String {
-        if bundleID == "com.microsoft.OneDrive" { return "cloud.fill" }
         if itemID.localizedCaseInsensitiveContains("siri") { return "waveform.circle.fill" }
         let known: [String: String] = [
             "com.apple.Spotlight": "magnifyingglass",
