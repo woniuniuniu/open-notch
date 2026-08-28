@@ -79,6 +79,46 @@ enum AccessibilityResolver {
         return extras
     }
 
+    static func pressMenuExtra(for item: MenuBarItem) -> Bool {
+        guard AXIsProcessTrusted() else { return false }
+        let requiredSystemAgents: Set<String> = [
+            "com.apple.controlcenter", "com.apple.systemuiserver",
+            "com.apple.TextInputMenuAgent", "com.apple.Spotlight",
+        ]
+        for app in NSWorkspace.shared.runningApplications {
+            guard let bundleIdentifier = app.bundleIdentifier else { continue }
+            let bundleMatches = bundleIdentifier == item.semanticBundleIdentifier
+                || bundleIdentifier == item.hostBundleIdentifier
+                || (item.semanticIdentifier.hasPrefix("module:") && requiredSystemAgents.contains(bundleIdentifier))
+            guard bundleMatches else { continue }
+
+            let applicationElement = AXUIElementCreateApplication(app.processIdentifier)
+            AXUIElementSetMessagingTimeout(applicationElement, 0.25)
+            for menuBar in children(of: applicationElement)
+            where string(menuBar, kAXRoleAttribute as CFString) == kAXMenuBarRole {
+                let extras = children(of: menuBar).filter {
+                    string($0, kAXSubroleAttribute as CFString) == "AXMenuExtra"
+                }
+                let exact = extras.first { element in
+                    let identifier = string(element, kAXIdentifierAttribute as CFString)
+                    let title = string(element, kAXTitleAttribute as CFString)
+                    let description = string(element, kAXDescriptionAttribute as CFString)
+                    return [identifier, title, description].contains(item.rawTitle)
+                        || [identifier, title, description].contains(item.semanticIdentifier)
+                        || (!item.rawTitle.isEmpty && [identifier, title, description].contains {
+                            $0.localizedCaseInsensitiveContains(item.rawTitle)
+                        })
+                }
+                let candidate = exact ?? (extras.count == 1 ? extras.first : nil)
+                if let candidate,
+                   AXUIElementPerformAction(candidate, kAXPressAction as CFString) == .success {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
     private static func value(_ element: AXUIElement, _ attribute: CFString) -> CFTypeRef? {
         var result: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute, &result) == .success else { return nil }

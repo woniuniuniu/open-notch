@@ -84,6 +84,9 @@
 "Show All reveals every managed icon when an external display is the primary display. The compact layout returns automatically when the built-in display becomes primary." = "选择“外接屏全部显示”后，当外接显示器成为主屏时会展示全部图标；切回以内建显示器为主时，会自动恢复精简布局。";
 "Display configuration changed" = "显示器配置已变化";
 "Display mode changed" = "显示器模式已切换";
+"More" = "更多";
+"No hidden items" = "暂时没有隐藏图标";
+"Could not activate menu bar item: %@" = "无法打开菜单栏项目：%@";
 "Permission" = "权限";
 "Permission active: identifying menu bar items" = "权限生效，正在重新识别图标";
 "Pinning" = "固定";

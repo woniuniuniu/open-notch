@@ -1,5 +1,7 @@
 import AppKit
 import Foundation
+import QuartzCore
+import SwiftUI
 
 @MainActor
 final class StatusBarController: NSObject {
@@ -13,6 +15,11 @@ final class StatusBarController: NSObject {
     private var boundaryWidthConstraint: NSLayoutConstraint?
     private var menu: NSMenu?
     private var positionRefreshGeneration: UInt64 = 0
+    private var shelfPanel: NSPanel?
+    private var morePanel: NSPanel?
+    private var localMouseMonitor: Any?
+    private var globalMouseMonitor: Any?
+    private var shelfIsVisible = false
 
     var onToggle: (() -> Void)?
     var onOpenSettings: (() -> Void)?
@@ -20,6 +27,8 @@ final class StatusBarController: NSObject {
     var onToggleGuardian: (() -> Void)?
     var onRestart: (() -> Void)?
     var onExportDebug: (() -> Void)?
+    var hiddenItemsProvider: (() -> [MenuBarItem])?
+    var onActivateHiddenItem: ((MenuBarItem) -> Void)?
 
     override init() {
         boundaryItem = NSStatusBar.system.statusItem(withLength: 0)
@@ -31,6 +40,11 @@ final class StatusBarController: NSObject {
         configureBoundary()
         configureToggle()
         captureBoundaryWidthConstraint()
+    }
+
+    deinit {
+        if let localMouseMonitor { NSEvent.removeMonitor(localMouseMonitor) }
+        if let globalMouseMonitor { NSEvent.removeMonitor(globalMouseMonitor) }
     }
 
     var excludedWindowIDs: Set<CGWindowID> {
@@ -202,7 +216,6 @@ final class StatusBarController: NSObject {
         menu.addItem(quitItem)
 
         self.menu = menu
-        toggleItem.menu = menu
     }
 
     private func configureBoundary() {
@@ -222,6 +235,150 @@ final class StatusBarController: NSObject {
         button.setAccessibilityIdentifier("OpenNotch.Toggle")
         button.setAccessibilityLabel(L("App Name"))
         button.toolTip = L("App Name")
+        button.target = self
+        button.action = #selector(toggleShelfFromStatusItem(_:))
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+    }
+
+    @objc private func toggleShelfFromStatusItem(_ sender: Any?) {
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            showMoreMenu()
+            return
+        }
+        shelfIsVisible ? hideShelf() : showShelf()
+    }
+
+    private func showShelf() {
+        let items = hiddenItemsProvider?() ?? []
+        let shelfWidth = min(420, max(150, CGFloat(items.count) * 42 + 18))
+        let shelfSize = NSSize(width: shelfWidth, height: 50)
+        let moreSize = NSSize(width: 82, height: 40)
+        guard let anchor = statusItemScreenFrame() else { return }
+
+        let shelf = makePanel(
+            size: shelfSize,
+            content: AnyView(HiddenItemsShelfView(items: items) { [weak self] item in
+                self?.hideShelf()
+                self?.onActivateHiddenItem?(item)
+            })
+        )
+        let more = makePanel(
+            size: moreSize,
+            content: AnyView(MoreCapsuleView { [weak self] in self?.showMoreMenu() })
+        )
+        let screen = NSScreen.screens.first(where: { $0.frame.intersects(anchor) }) ?? NSScreen.main
+        let visible = screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+        let gap: CGFloat = 8
+        let y = min(visible.maxY - max(shelfSize.height, moreSize.height), anchor.minY - shelfSize.height - gap)
+        let shelfX = max(visible.minX + 8, anchor.minX - shelfSize.width - gap)
+        let moreX = min(visible.maxX - moreSize.width - 8, anchor.maxX + gap)
+        let shelfFrame = NSRect(origin: NSPoint(x: shelfX, y: y), size: shelfSize)
+        let moreFrame = NSRect(origin: NSPoint(x: moreX, y: y + 5), size: moreSize)
+
+        shelfPanel = shelf
+        morePanel = more
+        shelfIsVisible = true
+        animateIn(shelf, targetFrame: shelfFrame)
+        animateIn(more, targetFrame: moreFrame)
+        installOutsideClickMonitors()
+    }
+
+    private func makePanel(size: NSSize, content: AnyView) -> NSPanel {
+        let panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = false
+        panel.hidesOnDeactivate = false
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.isFloatingPanel = true
+        panel.isMovable = false
+        panel.contentView = NSHostingView(rootView: content)
+        return panel
+    }
+
+    private func animateIn(_ panel: NSPanel, targetFrame: NSRect) {
+        panel.alphaValue = 0
+        panel.setFrame(targetFrame.offsetBy(dx: 0, dy: 6), display: false)
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().alphaValue = 1
+            panel.animator().setFrame(targetFrame, display: true)
+        }
+    }
+
+    private func hideShelf(animated: Bool = true) {
+        guard shelfIsVisible else { return }
+        shelfIsVisible = false
+        removeOutsideClickMonitors()
+        let panels = [shelfPanel, morePanel].compactMap { $0 }
+        let finish = { [weak self] in
+            panels.forEach { $0.orderOut(nil) }
+            self?.shelfPanel = nil
+            self?.morePanel = nil
+        }
+        guard animated else { finish(); return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.16
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panels.forEach {
+                $0.animator().alphaValue = 0
+                $0.animator().setFrame($0.frame.offsetBy(dx: 0, dy: 4), display: true)
+            }
+        } completionHandler: { finish() }
+    }
+
+    private func showMoreMenu() {
+        hideShelf(animated: false)
+        guard let menu, let button = toggleItem.button else { return }
+        menu.popUp(positioning: nil, at: NSPoint(x: button.bounds.midX, y: button.bounds.minY - 4), in: button)
+    }
+
+    private func statusItemScreenFrame() -> NSRect? {
+        if let button = toggleItem.button, let window = button.window {
+            return window.convertToScreen(button.convert(button.bounds, to: nil))
+        }
+        guard let frame = rawWindow(for: toggleItem)?.frame ?? statusItemFrame(for: toggleItem),
+              let screen = NSScreen.screens.first(where: {
+                  frame.minX >= $0.frame.minX && frame.minX <= $0.frame.maxX
+              }) ?? NSScreen.main
+        else { return nil }
+        return NSRect(
+            x: frame.minX,
+            y: screen.frame.maxY - frame.maxY,
+            width: frame.width,
+            height: frame.height
+        )
+    }
+
+    private func installOutsideClickMonitors() {
+        removeOutsideClickMonitors()
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
+            [weak self] event in
+            self?.dismissShelfIfNeeded(at: NSEvent.mouseLocation)
+            return event
+        }
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
+            [weak self] _ in self?.dismissShelfIfNeeded(at: NSEvent.mouseLocation)
+        }
+    }
+
+    private func dismissShelfIfNeeded(at point: NSPoint) {
+        let isInside = [shelfPanel, morePanel].compactMap { $0 }.contains { $0.frame.contains(point) }
+        if !isInside { hideShelf() }
+    }
+
+    private func removeOutsideClickMonitors() {
+        if let localMouseMonitor { NSEvent.removeMonitor(localMouseMonitor); self.localMouseMonitor = nil }
+        if let globalMouseMonitor { NSEvent.removeMonitor(globalMouseMonitor); self.globalMouseMonitor = nil }
     }
 
     private func captureBoundaryWidthConstraint() {

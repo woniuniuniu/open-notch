@@ -23,6 +23,7 @@ final class SettingsStore: ObservableObject {
         static let hiddenItemPositions = "hiddenItemPositions.v1"
         static let restoredSystemItemVisibility = "restoredSystemItemVisibility.v2"
         static let externalDisplayMode = "externalDisplayMode.v1"
+        static let restoredWeatherVisibility = "restoredWeatherVisibility.v1"
     }
 
     @Published var policies: [String: ItemDisposition] {
@@ -170,6 +171,25 @@ final class SettingsStore: ObservableObject {
                 _ = controlCenter.synchronize()
             }
             defaults.set(true, forKey: Key.restoredSystemItemVisibility)
+        }
+
+        // Weather is a newer system menu-bar control and was omitted by the
+        // original macOS 27 assessment allow-list. Restore the user's system
+        // checkbox once; subsequent choices remain user-controlled.
+        if !defaults.bool(forKey: Key.restoredWeatherVisibility) {
+            CFPreferencesSetValue(
+                "Weather" as CFString,
+                NSNumber(value: 8),
+                "com.apple.controlcenter" as CFString,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesCurrentHost
+            )
+            _ = CFPreferencesSynchronize(
+                "com.apple.controlcenter" as CFString,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesCurrentHost
+            )
+            defaults.set(true, forKey: Key.restoredWeatherVisibility)
         }
 
         // Persist the sanitized values so invalid identities from pre-0.1.3

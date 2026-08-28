@@ -84,6 +84,9 @@
 "Show All reveals every managed icon when an external display is the primary display. The compact layout returns automatically when the built-in display becomes primary." = "Show All reveals every managed icon when an external display is the primary display. The compact layout returns automatically when the built-in display becomes primary.";
 "Display configuration changed" = "Display configuration changed";
 "Display mode changed" = "Display mode changed";
+"More" = "More";
+"No hidden items" = "No hidden items";
+"Could not activate menu bar item: %@" = "Could not activate menu bar item: %@";
 "Permission" = "Permission";
 "Permission active: identifying menu bar items" = "Permission active: identifying menu bar items";
 "Pinning" = "Pinning";

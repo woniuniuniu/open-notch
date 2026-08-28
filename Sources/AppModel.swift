@@ -56,6 +56,13 @@ final class AppModel: ObservableObject {
     var isExpanded: Bool { settings.isExpanded }
     var canManageMenuBar: Bool { MenuBarAgentBridge.isAvailable || hasAccessibilityPermission }
     var oneDriveItem: MenuBarItem? { items.first(where: \.isOneDrive) }
+    var shelfHiddenItems: [MenuBarItem] {
+        items.filter {
+            !$0.isProtected
+                && !$0.isOpenNotchControl
+                && settings.disposition(for: $0) == .hidden
+        }.sorted { $0.frame.minX < $1.frame.minX }
+    }
     var externalDisplayStatusText: String {
         guard externalDisplayConnected else { return L("No external display detected") }
         return externalDisplayIsPrimary
@@ -169,6 +176,8 @@ final class AppModel: ObservableObject {
         statusBar.onToggleGuardian = { [weak self] in self?.toggleGuardian() }
         statusBar.onRestart = { [weak self] in self?.restartApplication() }
         statusBar.onExportDebug = { [weak self] in self?.exportDebugReport() }
+        statusBar.hiddenItemsProvider = { [weak self] in self?.shelfHiddenItems ?? [] }
+        statusBar.onActivateHiddenItem = { [weak self] item in self?.activateHiddenMenuItem(item) }
         self.statusBar = statusBar
         restorePersistedWindowBindings()
         refreshMenuItemSections()
@@ -785,6 +794,35 @@ final class AppModel: ObservableObject {
         updateDisplayState(reason: L("Display mode changed"), apply: true)
     }
 
+    func activateHiddenMenuItem(_ item: MenuBarItem) {
+        Task.detached(priority: .userInitiated) {
+            var pressed = AccessibilityResolver.pressMenuExtra(for: item)
+            if !pressed, MenuBarAgentBridge.isAvailable {
+                await MainActor.run {
+                    self.applyMenuBarAgentVisibility(
+                        reason: L("Hidden shelf activation"),
+                        additionallyAllowed: item
+                    )
+                }
+                try? await Task.sleep(for: .milliseconds(280))
+                pressed = AccessibilityResolver.pressMenuExtra(for: item)
+                try? await Task.sleep(for: .seconds(2))
+                await MainActor.run {
+                    self.applyMenuBarAgentVisibility(reason: L("Hidden shelf activation finished"))
+                }
+            }
+            let activationSucceeded = pressed
+            await MainActor.run {
+                Diagnostics.shared.append(
+                    "Hidden shelf activation; item=\(item.displayName); id=\(item.id); AXPress=\(activationSucceeded)"
+                )
+                if !activationSucceeded {
+                    self.addEvent(LF("Could not activate menu bar item: %@", item.displayName))
+                }
+            }
+        }
+    }
+
     func setLanguage(_ language: AppLanguage) {
         guard settings.language != language else { return }
         settings.language = language
@@ -997,12 +1035,18 @@ final class AppModel: ObservableObject {
         MenuBarAgentBridge.isAvailable ? MenuBarAgentBridge.enumerationName : WindowServerBridge.enumerationName
     }
 
-    private func applyMenuBarAgentVisibility(reason: String) {
+    private func applyMenuBarAgentVisibility(
+        reason: String,
+        additionallyAllowed forcedItem: MenuBarItem? = nil
+    ) {
         guard MenuBarAgentBridge.isAvailable, !isStopping else { return }
         // MBAssessmentModeConfiguration expects numeric system-item IDs, not
         // MenuBarAgent's module names. Begin with the complete system set so a
         // previously hidden item can be restored even before it is enumerated.
-        var allowedSystemItems = Set(0...8)
+        // New macOS releases add system menu extras (for example Weather)
+        // with IDs outside the original 0...8 range. Allow future system IDs
+        // by default and remove only the known item the user explicitly hid.
+        var allowedSystemItems = Set(0...64)
         let systemItemIDs: [String: Int] = [
             "Battery": 0, "Bluetooth": 1, "Clock": 2, "Display": 3,
             "Keyboard": 4, "Sound": 5, "WiFi": 6,
@@ -1012,6 +1056,7 @@ final class AppModel: ObservableObject {
             let module = String(item.semanticIdentifier.dropFirst("module:".count))
             if !effectiveExpanded,
                settings.disposition(for: item) == .hidden,
+               item.id != forcedItem?.id,
                let id = systemItemIDs[module]
             {
                 allowedSystemItems.remove(id)
@@ -1019,7 +1064,9 @@ final class AppModel: ObservableObject {
         }
         var allowed = Set(items.compactMap { item -> String? in
             guard !item.semanticIdentifier.hasPrefix("module:") else { return nil }
-            return effectiveExpanded || settings.disposition(for: item) == .visible
+            return effectiveExpanded
+                || item.id == forcedItem?.id
+                || settings.disposition(for: item) == .visible
                 ? item.semanticBundleIdentifier
                 : nil
         })
