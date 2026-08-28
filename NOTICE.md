@@ -48,3 +48,12 @@ distributed under GPL-3.0-only.
 
 Bartender is proprietary software and is referenced only as product inspiration.
 No Bartender source code or proprietary asset is included in this repository.
+
+## macOS 27 MenuBarAgent compatibility
+
+The macOS 27 Accessibility inventory and MenuBarAgent compatibility path in
+`Sources/MenuBarAgentBridge.swift` was independently implemented for Open
+Notch from runtime inspection of the operating system. It uses undocumented
+Apple frameworks and selectors, contains no Apple source code, and is provided
+under GPL-3.0-only. Apple may change or remove this compatibility path in later
+macOS releases.

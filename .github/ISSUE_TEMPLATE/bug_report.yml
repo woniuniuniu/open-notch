@@ -11,14 +11,14 @@ body:
     id: version
     attributes:
       label: Open Notch version
-      placeholder: 0.5.0 (8)
+      placeholder: 0.7.1 (17)
     validations:
       required: true
   - type: input
     id: macos
     attributes:
       label: macOS version
-      placeholder: 26.5 (25F71)
+      placeholder: 27.0 or 26.5 (25F71)
     validations:
       required: true
   - type: textarea

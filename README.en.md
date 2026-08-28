@@ -122,7 +122,7 @@ build.sh                          reproducible build, signing, and packaging
 
 ## Privacy and security
 
-Open Notch makes no network requests and collects no analytics or telemetry. Preferences and identity bindings remain in the local `UserDefaults` store. Accessibility is used only for menu bar discovery, the necessary window geometry, and the explicit Command-drag described above.
+Menu bar management in Open Notch is local. The app collects no analytics or telemetry and has no account system. A network request is made only after the user explicitly clicks Generate in AI Organizer; it sends an anonymous installation ID, language, time-zone offset, hardware model, display geometry, and each scanned item's name, bundle identifier, and visible state to the existing AI service. It does not send serial numbers, screen contents, usernames, or file paths. Preferences and identity bindings remain in the local `UserDefaults` store. Accessibility is used only for menu bar discovery, necessary geometry, and explicit compatibility operations.
 
 Do not upload Accessibility dumps, screenshots, personal paths, credentials, or other machine-specific data to issues or pull requests. See [`SECURITY.md`](SECURITY.md) for vulnerability reports.
 

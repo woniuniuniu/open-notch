@@ -40,7 +40,7 @@ enum WindowServerBridge {
     }
 
     static var enumerationName: String {
-        usesIndividualWindowEnumeration ? "WindowServer CGS (experimental macOS 27)" : "CoreGraphics public inventory"
+        usesIndividualWindowEnumeration ? "Accessibility AXExtrasMenuBar (macOS 27)" : "CoreGraphics public inventory"
     }
 
     static func individualMenuBarWindowIDs() -> [CGWindowID] {
