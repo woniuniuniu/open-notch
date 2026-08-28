@@ -144,12 +144,11 @@ private struct SettingsQuickMenu: View {
             Divider().padding(.vertical, 3)
             Button { NSApplication.shared.terminate(nil) } label: {
                 Text(L("Quit Open Notch"))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .frame(width: 164, height: 34, alignment: .leading)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, 10)
-            .frame(width: 164, height: 34, alignment: .leading)
-            .contentShape(Rectangle())
             .background(Color.clear)
         }
         .padding(8)
@@ -162,12 +161,11 @@ private struct SettingsQuickMenu: View {
     private func menuButton(_ title: String, icon: String, pane: SettingsPane) -> some View {
         Button { model.selectedPane = pane; isPresented = false } label: {
             Label(title, systemImage: icon)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .frame(width: 164, height: 34, alignment: .leading)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 10)
-        .frame(width: 164, height: 34, alignment: .leading)
-        .contentShape(Rectangle())
         .onHover { hoveredMenu = $0 ? pane.id : nil }
         .background(hoveredMenu == pane.id ? Color.primary.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
     }
@@ -1441,17 +1439,29 @@ private struct AboutPane: View {
 
             GlassPanel(title: L("Credits"), systemImage: "heart.fill", accent: OpenNotchTheme.magenta) {
                 VStack(spacing: 0) {
-                    SettingsLine(L("Developer"), systemImage: "hammer.fill", tint: OpenNotchTheme.cyan) {
-                        Text(L("Xiaohongshu @Snail's Tech Notes"))
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
+                    Button { openWebPage("https://xhslink.cn/o/3FJ4ihogsyR") } label: {
+                        SettingsLine(L("Developer"), systemImage: "hammer.fill", tint: OpenNotchTheme.cyan) {
+                            Text(L("Xiaohongshu @Snail's Tech Notes"))
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .frame(height: 48, alignment: .center)
+                        }
+                        .frame(height: 48)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     Divider().opacity(0.55)
-                    SettingsLine(L("Chinese localization contributor"), systemImage: "character.cursor.ibeam", tint: OpenNotchTheme.magenta) {
-                        Text("小红书@李山迎 Joshua")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
+                    Button { openWebPage("https://xhslink.cn/o/2Y6kEGiWHy1") } label: {
+                        SettingsLine(L("Chinese localization contributor"), systemImage: "character.cursor.ibeam", tint: OpenNotchTheme.magenta) {
+                            Text("小红书@李山迎 Joshua")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .frame(height: 48, alignment: .center)
+                        }
+                        .frame(height: 48)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -1459,6 +1469,11 @@ private struct AboutPane: View {
 
     private func openBundledDocument(resource: String, extension fileExtension: String?) {
         guard let url = Bundle.main.url(forResource: resource, withExtension: fileExtension) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func openWebPage(_ address: String) {
+        guard let url = URL(string: address) else { return }
         NSWorkspace.shared.open(url)
     }
 }
