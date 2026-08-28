@@ -193,21 +193,46 @@ enum MenuBarMoveEngine {
     /// Reorders one status item using events that are intercepted from the
     /// shared session stream and delivered only to the owning process.
     /// No event is allowed to reach the foreground application.
+    @MainActor
     static func reorderShielded(
         _ item: MenuBarItem,
         adjacentTo target: MenuBarItem,
         placeAfterTarget: Bool
     ) -> Result {
-        guard AccessibilityResolver.isTrusted(), item.hostPID > 0,
-              item.frame.width > 0, target.frame.width > 0,
-              waitForUserInputToSettle(timeout: 0.8),
-              let cursorShield = CursorShield(),
-              let eventShield = ReorderEventShield(
-                targetPID: item.hostPID,
-                allowedRect: item.frame.union(target.frame).insetBy(dx: -8, dy: -3)
-              ),
-              let source = CGEventSource(stateID: .hidSystemState)
-        else { return .failed }
+        guard AccessibilityResolver.isTrusted() else {
+            Diagnostics.shared.append("Shielded reorder preparation failed; reason=accessibility")
+            return .failed
+        }
+        guard item.hostPID > 0, item.frame.width > 0, target.frame.width > 0 else {
+            Diagnostics.shared.append(
+                "Shielded reorder preparation failed; reason=invalidGeometry; " +
+                "pid=\(item.hostPID); sourceFrame=\(NSStringFromRect(item.frame)); " +
+                "targetFrame=\(NSStringFromRect(target.frame))"
+            )
+            return .failed
+        }
+        guard waitForUserInputToSettle(timeout: 0.35) else {
+            Diagnostics.shared.append("Shielded reorder deferred; reason=userInputActive")
+            return .deferredForUserInput
+        }
+        guard let cursorShield = CursorShield() else {
+            Diagnostics.shared.append("Shielded reorder preparation failed; reason=cursorShield")
+            return .failed
+        }
+        guard let eventShield = ReorderEventShield(
+            targetPID: item.hostPID,
+            allowedRect: item.frame.union(target.frame).insetBy(dx: -8, dy: -3)
+        ) else {
+            cursorShield.finish()
+            Diagnostics.shared.append("Shielded reorder preparation failed; reason=eventShield")
+            return .failed
+        }
+        guard let source = CGEventSource(stateID: .hidSystemState) else {
+            eventShield.finish()
+            cursorShield.finish()
+            Diagnostics.shared.append("Shielded reorder preparation failed; reason=eventSource")
+            return .failed
+        }
         defer {
             eventShield.finish()
             cursorShield.finish()

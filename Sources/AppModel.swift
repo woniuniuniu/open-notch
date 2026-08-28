@@ -378,22 +378,107 @@ final class AppModel: ObservableObject {
                 "Menu bar reorder persisted but live layout did not update; " +
                 "source=\(source.id); target=\(target.id); inputSynthesis=false"
             )
-            let result = MenuBarMoveEngine.reorderShielded(
-                liveSource,
-                adjacentTo: liveTarget,
-                placeAfterTarget: placeAfterTarget
+            self.attemptShieldedReorder(
+                sourceID: source.id,
+                targetID: target.id,
+                placeAfterTarget: placeAfterTarget,
+                attempt: 0
             )
-            Diagnostics.shared.append(
-                "WindowServer shielded reorder; source=\(source.id); target=\(target.id); " +
-                "result=\(String(describing: result)); foregroundDelivery=false"
-            )
-            if case .failed = result { self.addEvent(L("Could not reorder menu bar item")) }
-            self.isReordering = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-                self?.visualMenuItemOrder = nil
-                self?.refresh(reason: L("Manual reorder"), reconcile: false)
-            }
         }
+    }
+
+    private func attemptShieldedReorder(
+        sourceID: String,
+        targetID: String,
+        placeAfterTarget: Bool,
+        attempt: Int
+    ) {
+        guard isReordering else { return }
+        let live = MenuBarAgentBridge.items()
+        guard let liveSource = live.first(where: { $0.id == sourceID }),
+              let liveTarget = live.first(where: { $0.id == targetID })
+        else {
+            scheduleShieldedReorderRetry(
+                sourceID: sourceID,
+                targetID: targetID,
+                placeAfterTarget: placeAfterTarget,
+                attempt: attempt + 1,
+                delay: 0.35
+            )
+            return
+        }
+
+        let applied = placeAfterTarget
+            ? liveSource.frame.minX > liveTarget.frame.minX
+            : liveSource.frame.minX < liveTarget.frame.minX
+        if applied {
+            items = live
+            visualMenuItemOrder = nil
+            isReordering = false
+            Diagnostics.shared.append(
+                "Menu bar reorder verified after shielded attempt; attempts=\(attempt)"
+            )
+            return
+        }
+
+        guard attempt < 5 else {
+            finishFailedShieldedReorder(sourceID: sourceID, targetID: targetID)
+            return
+        }
+        let result = MenuBarMoveEngine.reorderShielded(
+            liveSource,
+            adjacentTo: liveTarget,
+            placeAfterTarget: placeAfterTarget
+        )
+        Diagnostics.shared.append(
+            "WindowServer shielded reorder; source=\(sourceID); target=\(targetID); " +
+            "attempt=\(attempt + 1); result=\(String(describing: result)); foregroundDelivery=false"
+        )
+        let delay: TimeInterval
+        switch result {
+        case .moved: delay = 0.4
+        case .deferredForUserInput: delay = 0.5
+        case .failed: delay = 0.35
+        }
+        scheduleShieldedReorderRetry(
+            sourceID: sourceID,
+            targetID: targetID,
+            placeAfterTarget: placeAfterTarget,
+            attempt: attempt + 1,
+            delay: delay
+        )
+    }
+
+    private func scheduleShieldedReorderRetry(
+        sourceID: String,
+        targetID: String,
+        placeAfterTarget: Bool,
+        attempt: Int,
+        delay: TimeInterval
+    ) {
+        guard attempt <= 5 else {
+            finishFailedShieldedReorder(sourceID: sourceID, targetID: targetID)
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.attemptShieldedReorder(
+                sourceID: sourceID,
+                targetID: targetID,
+                placeAfterTarget: placeAfterTarget,
+                attempt: attempt
+            )
+        }
+    }
+
+    private func finishFailedShieldedReorder(sourceID: String, targetID: String) {
+        Diagnostics.shared.append(
+            "WindowServer shielded reorder exhausted retries; source=\(sourceID); target=\(targetID)"
+        )
+        addEvent(L("Could not reorder menu bar item"))
+        visualMenuItemOrder = nil
+        isReordering = false
+        objectWillChange.send()
+        refresh(reason: L("Manual reorder"), reconcile: false)
     }
 
     func beginMenuItemDrag(_ id: String) {
@@ -445,6 +530,14 @@ final class AppModel: ObservableObject {
         }
 
         let placeAfter = location.y >= candidate.value.midY
+        guard menuItemDropChangesOrder(
+            sourceID: sourceID,
+            targetID: candidate.key,
+            placeAfterTarget: placeAfter
+        ) else {
+            menuItemDropTargetID = nil
+            return
+        }
         if menuItemDropTargetID != candidate.key || menuItemDropAfterTarget != placeAfter {
             menuItemDropTargetID = candidate.key
             menuItemDropAfterTarget = placeAfter
@@ -477,6 +570,25 @@ final class AppModel: ObservableObject {
         menuItemDropTargetID = nil
         menuItemDropAfterTarget = false
         menuItemDragOffset = .zero
+    }
+
+    private func menuItemDropChangesOrder(
+        sourceID: String,
+        targetID: String,
+        placeAfterTarget: Bool
+    ) -> Bool {
+        let orderedIDs = items.filter {
+            disposition(for: $0) == .visible
+                && ($0.frame.width > 1 || $0.isOpenNotchControl)
+        }.sorted { $0.frame.minX < $1.frame.minX }.map(\.id)
+        guard let sourceIndex = orderedIDs.firstIndex(of: sourceID),
+              orderedIDs.contains(targetID)
+        else { return false }
+        var proposed = orderedIDs
+        proposed.remove(at: sourceIndex)
+        guard let targetIndex = proposed.firstIndex(of: targetID) else { return false }
+        proposed.insert(sourceID, at: targetIndex + (placeAfterTarget ? 1 : 0))
+        return proposed != orderedIDs
     }
 
     func moveMenuBarItem(_ id: String, offset: Int) {
