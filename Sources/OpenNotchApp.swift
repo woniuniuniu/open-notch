@@ -4,7 +4,21 @@ import SwiftUI
 private final class SettingsHostingView<Content: View>: NSHostingView<Content> {
     @available(macOS 27.0, *)
     override var cornerConfiguration: NSViewCornerConfiguration? {
-        .uniformCorners(radius: .containerConcentric(8))
+        .uniformCorners(radius: .containerConcentric(16))
+    }
+
+    override func layout() {
+        super.layout()
+        wantsLayer = true
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+        if #available(macOS 27.0, *), let radii = effectiveCornerRadii {
+            // The configuration is uniform; using the resolved system value
+            // for the layer mask guarantees identical top and bottom corners.
+            layer?.cornerRadius = radii.topLeft
+        } else {
+            layer?.cornerRadius = 16
+        }
     }
 }
 

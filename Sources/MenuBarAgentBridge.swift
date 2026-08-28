@@ -18,14 +18,20 @@ enum MenuBarAgentBridge {
 
     static func items() -> [MenuBarItem] {
         guard isAvailable, let positions = positions() else { return [] }
-        return positions.compactMap(makeItem).sorted { $0.frame.minX < $1.frame.minX }
+        let extras = AccessibilityResolver.menuExtras()
+        return positions.compactMap(makeItem).map { item in
+            guard let extra = bestAccessibilityMatch(for: item, in: extras) else { return item }
+            return replacingFrame(of: item, with: extra.frame)
+        }.sorted { $0.frame.minX < $1.frame.minX }
     }
 
     static func positions() -> [String: Double]? {
-        guard
-            let domainValues = UserDefaults.standard.persistentDomain(forName: domain),
-            let rawPositions = domainValues[positionsKey] as? [String: Any]
-        else { return nil }
+        guard let rawPositions = CFPreferencesCopyValue(
+            positionsKey as CFString,
+            domain as CFString,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        ) as? [String: Any] else { return nil }
         var result = [String: Double]()
         for (key, value) in rawPositions {
             if let number = value as? NSNumber { result[key] = number.doubleValue }
@@ -38,7 +44,12 @@ enum MenuBarAgentBridge {
     /// substantially more reliable than inventing fractional values between
     /// neighbors, which MenuBarAgent may normalize back to its previous order.
     @MainActor
-    static func moveItem(_ sourceKey: String, adjacentTo targetKey: String, placeAfterTarget: Bool) -> Bool {
+    static func moveItem(
+        _ sourceKey: String,
+        adjacentTo targetKey: String,
+        placeAfterTarget: Bool,
+        liveOrder: [String]
+    ) -> Bool {
         guard
             isAvailable,
             sourceKey != targetKey,
@@ -46,12 +57,14 @@ enum MenuBarAgentBridge {
             current[sourceKey] != nil,
             current[targetKey] != nil
         else { return false }
-        var orderedKeys = current.keys.sorted {
-            let lhs = current[$0] ?? 0
-            let rhs = current[$1] ?? 0
-            return lhs == rhs ? $0 < $1 : lhs < rhs
-        }
-        let existingSlots = orderedKeys.compactMap { current[$0] }.sorted()
+        // Preserve the slots currently occupying each real AX position and
+        // assign those slots to the requested order. The numeric values are
+        // not globally monotonic on macOS 27 (different item families use
+        // different ranges), so sorting the numbers corrupts the live order.
+        var orderedKeys = liveOrder.filter { current[$0] != nil }
+        guard orderedKeys.contains(sourceKey), orderedKeys.contains(targetKey) else { return false }
+        let existingSlots = orderedKeys.compactMap { current[$0] }
+        guard existingSlots.count == orderedKeys.count else { return false }
         orderedKeys.removeAll { $0 == sourceKey }
         guard let targetIndex = orderedKeys.firstIndex(of: targetKey) else { return false }
         let insertionIndex = targetIndex + (placeAfterTarget ? 1 : 0)
@@ -61,14 +74,54 @@ enum MenuBarAgentBridge {
         for (index, key) in orderedKeys.enumerated() {
             current[key] = existingSlots[index]
         }
-        let suite = UserDefaults(suiteName: domain)
-        suite?.set(current, forKey: positionsKey)
-        let synchronized = suite?.synchronize() ?? false
+        CFPreferencesSetValue(
+            positionsKey as CFString,
+            current as CFDictionary,
+            domain as CFString,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        )
+        let synchronized = CFPreferencesSynchronize(
+            domain as CFString,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        )
         Diagnostics.shared.append(
             "MenuBarAgent reorder; source=\(sourceKey); target=\(targetKey); " +
             "after=\(placeAfterTarget); slot=\(current[sourceKey] ?? -1); synchronized=\(synchronized)"
         )
         return synchronized
+    }
+
+    private static func bestAccessibilityMatch(
+        for item: MenuBarItem,
+        in extras: [SemanticMenuExtra]
+    ) -> SemanticMenuExtra? {
+        if item.semanticIdentifier.hasPrefix("status:") {
+            let candidates = extras.filter { $0.bundleIdentifier == item.semanticBundleIdentifier }
+            if candidates.count == 1 { return candidates[0] }
+            return candidates.first {
+                $0.identifier == item.rawTitle || $0.title == item.rawTitle || $0.description == item.rawTitle
+            }
+        }
+        guard item.semanticIdentifier.hasPrefix("module:") else { return nil }
+        let module = item.rawTitle.lowercased()
+        return extras.first {
+            $0.identifier.lowercased().contains(module)
+                || $0.title.lowercased().contains(module)
+                || $0.description.lowercased().contains(module)
+        }
+    }
+
+    private static func replacingFrame(of item: MenuBarItem, with frame: CGRect) -> MenuBarItem {
+        MenuBarItem(
+            id: item.id, windowID: item.windowID, hostPID: item.hostPID,
+            hostBundleIdentifier: item.hostBundleIdentifier,
+            semanticBundleIdentifier: item.semanticBundleIdentifier,
+            semanticIdentifier: item.semanticIdentifier, rawTitle: item.rawTitle,
+            displayName: item.displayName, symbolName: item.symbolName,
+            frame: frame, isProtected: item.isProtected
+        )
     }
 
     @MainActor
@@ -77,9 +130,18 @@ enum MenuBarAgentBridge {
             return false
         }
         current[key] = position
-        let suite = UserDefaults(suiteName: domain)
-        suite?.set(current, forKey: positionsKey)
-        let synchronized = suite?.synchronize() ?? false
+        CFPreferencesSetValue(
+            positionsKey as CFString,
+            current as CFDictionary,
+            domain as CFString,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        )
+        let synchronized = CFPreferencesSynchronize(
+            domain as CFString,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        )
         Diagnostics.shared.append("MenuBarAgent position restored; key=\(key); position=\(position); synchronized=\(synchronized)")
         return synchronized
     }

@@ -242,21 +242,44 @@ final class AppModel: ObservableObject {
         guard MenuBarAgentBridge.moveItem(
             source.semanticIdentifier,
             adjacentTo: target.semanticIdentifier,
-            placeAfterTarget: placeAfterTarget
+            placeAfterTarget: placeAfterTarget,
+            liveOrder: items.map(\.semanticIdentifier)
         ) else {
             Diagnostics.shared.append("MenuBarAgent reorder failed; source=\(source.id); target=\(target.id)")
             addEvent(L("Could not reorder menu bar item"))
             return
         }
 
-        var reordered = items
-        let moved = reordered.remove(at: sourceIndex)
-        guard let updatedTargetIndex = reordered.firstIndex(where: { $0.id == targetID }) else { return }
-        reordered.insert(moved, at: updatedTargetIndex + (placeAfterTarget ? 1 : 0))
-        items = reordered
-        objectWillChange.send()
         statusBar?.requestMenuBarPositionRefresh()
         Diagnostics.shared.append("Menu bar order saved and layout refresh requested without restarting MenuBarAgent")
+
+        // Some macOS 27 betas persist the preferred-position swap but never
+        // apply it to live AX geometry. Verify the actual coordinates, then use
+        // the system Command-drag interaction only as a cursor-shielded fallback.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak self] in
+            guard let self else { return }
+            let live = MenuBarAgentBridge.items()
+            guard let liveSource = live.first(where: { $0.id == source.id }),
+                  let liveTarget = live.first(where: { $0.id == target.id })
+            else { return }
+            let applied = placeAfterTarget
+                ? liveSource.frame.minX > liveTarget.frame.minX
+                : liveSource.frame.minX < liveTarget.frame.minX
+            guard !applied else {
+                self.items = live
+                Diagnostics.shared.append("Menu bar reorder verified from live AX geometry")
+                return
+            }
+            let result = MenuBarMoveEngine.reorder(
+                liveSource,
+                adjacentTo: liveTarget,
+                placeAfterTarget: placeAfterTarget
+            )
+            Diagnostics.shared.append("Menu bar Command-drag fallback result=\(String(describing: result))")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.refresh(reason: L("Manual reorder"), reconcile: false)
+            }
+        }
     }
 
     func moveMenuBarItem(_ id: String, offset: Int) {
