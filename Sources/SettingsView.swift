@@ -60,15 +60,13 @@ struct SettingsRootView: View {
     @ViewBuilder
     private var detail: some View {
         Group {
-            switch model.selectedPane ?? .overview {
-            case .overview: OverviewPane()
+            switch model.selectedPane ?? .menuItems {
             case .menuItems: MenuItemsPane()
-            case .oneDrive: OneDrivePane()
             case .general: GeneralPane()
             case .about: AboutPane()
             }
         }
-        .id(model.selectedPane ?? .overview)
+        .id(model.selectedPane ?? .menuItems)
         .transition(
             reduceMotion
                 ? .opacity
@@ -101,8 +99,6 @@ private struct WindowVisualEffect: NSViewRepresentable {
 
 private struct CompactTopBar: View {
     @EnvironmentObject private var model: AppModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Namespace private var namespace
     @Binding var showMenu: Bool
 
     var body: some View {
@@ -113,12 +109,8 @@ private struct CompactTopBar: View {
                 .resizable().frame(width: 26, height: 26)
                 .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.compactCornerRadius, style: .continuous))
 
-            HStack(spacing: 2) {
-                topTab(L("Overview"), pane: .overview, icon: "sparkles")
-                topTab(L("Items"), pane: .menuItems, icon: "menubar.rectangle")
-            }
-            .padding(3)
-            .background(.black.opacity(0.12), in: Capsule())
+            Text((model.selectedPane ?? .menuItems).title)
+                .font(.system(size: 13, weight: .semibold))
 
             Spacer(minLength: 0)
 
@@ -134,27 +126,6 @@ private struct CompactTopBar: View {
         .frame(height: 42)
     }
 
-    @ViewBuilder
-    private func topTab(_ title: String, pane: SettingsPane, icon: String) -> some View {
-        Button {
-            withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.82)) {
-                model.selectedPane = pane
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: icon).font(.system(size: 11, weight: .bold))
-                Text(title).font(.system(size: 13, weight: .semibold))
-            }
-            .padding(.horizontal, 10).frame(height: 27)
-            .background {
-                if model.selectedPane == pane || (pane == .overview && model.selectedPane == nil) {
-                    Capsule().fill(.white.opacity(0.19)).matchedGeometryEffect(id: "tab", in: namespace)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
 }
 
 private struct SettingsQuickMenu: View {
@@ -164,7 +135,7 @@ private struct SettingsQuickMenu: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            menuButton(L("OneDrive"), icon: "cloud.fill", pane: .oneDrive)
+            menuButton(L("Menu Bar Items"), icon: "menubar.rectangle", pane: .menuItems)
             menuButton(L("General"), icon: "slider.horizontal.3", pane: .general)
             menuButton(L("About"), icon: "info.circle", pane: .about)
             Divider().padding(.vertical, 3)
@@ -201,21 +172,23 @@ private struct SettingsQuickMenu: View {
 
 private struct WindowControlButtons: View {
     @State private var hovering = false
+    @State private var hostWindow: NSWindow?
 
     var body: some View {
         HStack(spacing: 7) {
             control(color: Color(red: 1, green: 0.37, blue: 0.34), symbol: "xmark") {
-                closeSettingsWindow()
+                hostWindow?.orderOut(nil)
             }
             control(color: Color(red: 1, green: 0.74, blue: 0.18), symbol: "minus") {
-                NSApp.keyWindow?.miniaturize(nil)
+                hostWindow?.miniaturize(nil)
             }
             control(color: Color(red: 0.20, green: 0.78, blue: 0.35), symbol: "arrow.up.left.and.arrow.down.right") {
-                NSApp.keyWindow?.zoom(nil)
+                hostWindow?.zoom(nil)
             }
         }
         .padding(.horizontal, 3)
         .onHover { hovering = $0 }
+        .background(WindowReader { hostWindow = $0 })
     }
 
     private func control(color: Color, symbol: String, action: @escaping () -> Void) -> some View {
@@ -234,11 +207,19 @@ private struct WindowControlButtons: View {
         .buttonStyle(.plain)
     }
 
-    private func closeSettingsWindow() {
-        let window = NSApp.windows.first {
-            $0.identifier?.rawValue == "OpenNotch.Settings"
-        }
-        window?.performClose(self)
+}
+
+private struct WindowReader: NSViewRepresentable {
+    let onResolve: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async { onResolve(view.window) }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async { onResolve(view.window) }
     }
 }
 
@@ -607,80 +588,6 @@ private struct PermissionBanner: View {
     }
 }
 
-private struct OverviewPane: View {
-    @EnvironmentObject private var model: AppModel
-    @ObservedObject private var settings = SettingsStore.shared
-
-    var body: some View {
-        PageScaffold(title: L("Overview"), subtitle: L("Menu bar at a glance")) {
-            if !model.canManageMenuBar {
-                PermissionBanner()
-            }
-
-            HStack(alignment: .center, spacing: 22) {
-                StatusGauge(visible: model.visibleItems.count, hidden: model.hiddenItems.count)
-
-                VStack(spacing: 4) {
-                    MetricLine(color: OpenNotchTheme.yellow, title: L("Keep Visible"), value: "\(model.visibleItems.count)")
-                    MetricLine(color: OpenNotchTheme.magenta, title: L("Set to Hidden"), value: "\(model.hiddenItems.count)")
-                    MetricLine(
-                        color: OpenNotchTheme.cyan,
-                        title: L("Current Status"),
-                        value: settings.isExpanded ? L("Expanded") : L("Collapsed")
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
-
-            GlassPanel(title: L("Menu Bar"), systemImage: "menubar.rectangle", accent: OpenNotchTheme.cyan) {
-                SettingsLine(
-                    L("Hidden Section"),
-                    subtitle: settings.isExpanded ? L("Hidden section expanded") : L("Hidden section collapsed"),
-                    systemImage: settings.isExpanded ? "eye" : "eye.slash",
-                    tint: OpenNotchTheme.cyan
-                ) {
-                    Button(settings.isExpanded ? L("Collapse") : L("Expand")) {
-                        model.toggleExpanded()
-                    }
-                    .systemGlassButton(prominent: true)
-                }
-            }
-
-            GlassPanel(title: "OneDrive", systemImage: "cloud.fill", accent: OpenNotchTheme.magenta) {
-                SettingsLine(
-                    model.oneDriveItem == nil ? L("OneDrive item not found") : L("OneDrive pinned"),
-                    subtitle: settings.oneDriveGuardianEnabled ? L("Keep OneDrive pinned") : L("Off"),
-                    systemImage: model.oneDriveItem == nil ? "cloud.slash" : "checkmark.shield.fill",
-                    tint: model.oneDriveItem == nil ? OpenNotchTheme.yellow : OpenNotchTheme.green
-                ) {
-                    Button(L("Reset Now")) { model.repairOneDriveNow() }
-                        .systemGlassButton()
-                        .disabled(model.oneDriveItem == nil || !model.canManageMenuBar)
-                }
-            }
-
-            if let event = model.guardianEvents.first {
-                GlassPanel(title: L("Recent Activity"), systemImage: "bolt.fill", accent: OpenNotchTheme.yellow) {
-                    HStack(spacing: 10) {
-                        Circle()
-                            .fill(OpenNotchTheme.yellow)
-                            .frame(width: 7, height: 7)
-                        Text(event.message)
-                            .font(.caption)
-                            .lineLimit(2)
-                        Spacer()
-                        Text(event.date, style: .time)
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-    }
-}
-
 private struct MenuItemsPane: View {
     @EnvironmentObject private var model: AppModel
 
@@ -722,7 +629,7 @@ private struct MenuItemsPane: View {
                     .help(L("Rescan"))
                 }
 
-                if model.items.filter({ !$0.isProtected }).isEmpty {
+                if model.managedItems.isEmpty {
                     GlassPanel {
                         VStack(spacing: 10) {
                             ContentUnavailableView(L("No manageable items"), systemImage: "menubar.rectangle")
@@ -860,16 +767,9 @@ private struct MenuItemRow: View {
                 .frame(width: 28, height: 28)
 
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(item.displayName)
-                        .font(.system(size: 14, weight: .semibold))
-                        .lineLimit(1)
-                    if item.isOneDrive {
-                        Text(L("Always Pinned"))
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(OpenNotchTheme.magenta)
-                    }
-                }
+                Text(item.displayName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
                 Text(secondaryText)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
@@ -879,11 +779,12 @@ private struct MenuItemRow: View {
 
             Spacer(minLength: 12)
 
-            VisibilityControl(selection: Binding(
-                get: { model.disposition(for: item) },
-                set: { model.setDisposition($0, for: item) }
-            ))
-            .disabled(item.isOneDrive && SettingsStore.shared.oneDriveGuardianEnabled)
+            if !item.isOpenNotchControl {
+                VisibilityControl(selection: Binding(
+                    get: { model.disposition(for: item) },
+                    set: { model.setDisposition($0, for: item) }
+                ))
+            }
         }
         .padding(.horizontal, 7)
         .frame(height: 60)
@@ -1012,108 +913,6 @@ private struct MenuItemIcon: View {
             }
         }
         .frame(width: 20, height: 20)
-    }
-}
-
-private struct OneDrivePane: View {
-    @EnvironmentObject private var model: AppModel
-    @ObservedObject private var settings = SettingsStore.shared
-
-    var body: some View {
-        PageScaffold(title: "OneDrive", subtitle: L("Dynamic menu bar item guardian")) {
-            if !model.canManageMenuBar {
-                PermissionBanner()
-            }
-
-            VStack(spacing: 8) {
-                Image(systemName: model.oneDriveItem == nil ? "cloud.slash.fill" : "cloud.fill")
-                    .font(.system(size: 38, weight: .medium))
-                    .foregroundStyle(model.oneDriveItem == nil ? OpenNotchTheme.yellow : OpenNotchTheme.cyan)
-                    .shadow(color: OpenNotchTheme.cyan.opacity(0.25), radius: 14)
-                Text(model.oneDriveItem == nil ? L("OneDrive item not found") : L("OneDrive pinned"))
-                    .font(.title3.weight(.bold))
-                Text(settings.oneDriveGuardianEnabled ? L("Keep OneDrive pinned") : L("Off"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-
-            GlassPanel(title: L("Status"), systemImage: "waveform.path.ecg", accent: OpenNotchTheme.cyan) {
-                VStack(spacing: 0) {
-                    SettingsLine(
-                        L("Identification"),
-                        subtitle: model.oneDriveItem == nil ? L("Not Found") : L("Identified"),
-                        systemImage: "scope",
-                        tint: model.oneDriveItem == nil ? OpenNotchTheme.yellow : OpenNotchTheme.green
-                    ) {
-                        Button(L("Reset Now")) { model.repairOneDriveNow() }
-                            .systemGlassButton(prominent: true)
-                            .disabled(model.oneDriveItem == nil || !model.canManageMenuBar)
-                    }
-
-                    if let oneDrive = model.oneDriveItem {
-                        Divider().opacity(0.55)
-                        SettingsLine(L("Current Window"), systemImage: "macwindow") {
-                            Text("#\(oneDrive.windowID)")
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-                        Divider().opacity(0.55)
-                        SettingsLine(L("Host Process"), systemImage: "shippingbox") {
-                            Text(oneDrive.hostBundleIdentifier)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                    }
-                }
-            }
-
-            GlassPanel(title: L("Guardian"), systemImage: "shield.fill", accent: OpenNotchTheme.magenta) {
-                VStack(spacing: 0) {
-                    SettingsLine(L("Keep OneDrive pinned"), systemImage: "pin.fill", tint: OpenNotchTheme.magenta) {
-                        Toggle("", isOn: Binding(
-                            get: { settings.oneDriveGuardianEnabled },
-                            set: { _ in model.toggleGuardian() }
-                        ))
-                        .labelsHidden()
-                    }
-                    Divider().opacity(0.55)
-                    SettingsLine(L("Automatic reset count"), systemImage: "arrow.triangle.2.circlepath") {
-                        Text("\(settings.repairCount)")
-                            .font(.caption.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .contentTransition(.numericText())
-                    }
-                }
-            }
-
-            if !model.guardianEvents.isEmpty {
-                GlassPanel(title: L("Recent Events"), systemImage: "clock.fill", accent: OpenNotchTheme.yellow) {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(model.guardianEvents.enumerated()), id: \.element.id) { index, event in
-                            HStack(spacing: 9) {
-                                Circle()
-                                    .fill(index == 0 ? OpenNotchTheme.yellow : Color.secondary.opacity(0.35))
-                                    .frame(width: 6, height: 6)
-                                Text(event.message)
-                                    .font(.caption)
-                                    .lineLimit(2)
-                                Spacer()
-                                Text(event.date, style: .time)
-                                    .font(.caption2.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                            .frame(minHeight: 34)
-                            if index < model.guardianEvents.count - 1 {
-                                Divider().opacity(0.45)
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -1316,17 +1115,9 @@ private struct GeneralPane: View {
                     }
                     Divider().opacity(0.55)
                     SettingsLine(L("Appearance"), systemImage: "circle.lefthalf.filled", tint: OpenNotchTheme.magenta) {
-                        Picker("", selection: Binding(
-                            get: { settings.appearanceMode },
-                            set: { model.setAppearance($0) }
-                        )) {
-                            ForEach(AppearanceMode.allCases) { mode in
-                                Text(mode.title).tag(mode)
-                            }
+                        AppearanceModeControl(selection: settings.appearanceMode) {
+                            model.setAppearance($0)
                         }
-                        .labelsHidden()
-                        .pickerStyle(.segmented)
-                        .frame(width: 150)
                         .padding(.trailing, 28)
                     }
                 }
@@ -1368,6 +1159,30 @@ private struct GeneralPane: View {
                 }
             }
 
+            GlassPanel(title: L("Displays"), systemImage: "display.2", accent: OpenNotchTheme.blue) {
+                SettingsLine(
+                    L("External Display"),
+                    subtitle: model.hasExternalDisplay
+                        ? (model.mainDisplayIsExternal
+                            ? L("External display is currently primary")
+                            : L("Built-in display is currently primary"))
+                        : L("No external display detected"),
+                    systemImage: model.hasExternalDisplay ? "display.2" : "laptopcomputer",
+                    tint: model.hasExternalDisplay ? OpenNotchTheme.green : OpenNotchTheme.cyan
+                ) {
+                    Picker("", selection: Binding(
+                        get: { settings.externalDisplayMode },
+                        set: { model.setExternalDisplayMode($0) }
+                    )) {
+                        ForEach(ExternalDisplayMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 190)
+                }
+            }
+
             GlassPanel(title: L("Permission"), systemImage: "hand.raised.fill", accent: OpenNotchTheme.magenta) {
                 SettingsLine(
                     L("Accessibility"),
@@ -1384,6 +1199,37 @@ private struct GeneralPane: View {
                 }
             }
         }
+    }
+}
+
+private struct AppearanceModeControl: View {
+    let selection: AppearanceMode
+    let onSelect: (AppearanceMode) -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(AppearanceMode.allCases) { mode in
+                Button { onSelect(mode) } label: {
+                    Text(mode.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .frame(width: 50, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(selection == mode ? Color.primary : Color.secondary)
+                .background {
+                    if selection == mode {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.primary.opacity(0.13))
+                            .shadow(color: .black.opacity(0.12), radius: 1, y: 1)
+                    }
+                }
+            }
+        }
+        .padding(2)
+        .frame(width: 154, height: 28)
+        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -1449,11 +1295,11 @@ private struct AboutPane: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(L("AI privacy details"))
                         .font(.caption.weight(.semibold))
-                    Text(L("Only app names, bundle identifiers, and current visible or hidden states are sent. Screenshots, paths, usernames, and Accessibility data never leave your Mac."))
+                    Text(L("AI sends an anonymous installation ID, app language and time-zone offset, plus app names, bundle identifiers, and visible or hidden states. Raw Accessibility trees, screenshots, paths, and usernames never leave your Mac."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(L("AI requests are processed by the Open Notch service and DeepSeek. Each installation can request one new recommendation every 24 hours."))
+                    Text(L("AI requests include the Mac model identifier, display geometry, macOS version, and scanned menu bar item names. They are processed by the Open Notch service and DeepSeek. Serial numbers and screen contents are never sent. Each installation can request up to three recommendations per local day."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

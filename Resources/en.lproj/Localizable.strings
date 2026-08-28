@@ -182,3 +182,15 @@
 "Save compatibility details and recent activity to Desktop" = "Save compatibility details and recent activity to Desktop";
 "Debug log exported to Desktop" = "Debug log exported to Desktop";
 "Debug log export failed" = "Debug log export failed";
+"AI sends an anonymous installation ID, app language and time-zone offset, plus app names, bundle identifiers, and visible or hidden states. Raw Accessibility trees, screenshots, paths, and usernames never leave your Mac." = "AI sends an anonymous installation ID, app language and time-zone offset, plus app names, bundle identifiers, and visible or hidden states. Raw Accessibility trees, screenshots, paths, and usernames never leave your Mac.";
+"AI requests include the Mac model identifier, display geometry, macOS version, and scanned menu bar item names. They are processed by the Open Notch service and DeepSeek. Serial numbers and screen contents are never sent. Each installation can request up to three recommendations per local day." = "AI requests include the Mac model identifier, display geometry, macOS version, and scanned menu bar item names. They are processed by the Open Notch service and DeepSeek. Serial numbers and screen contents are never sent. Each installation can request up to three recommendations per local day.";
+"Restoring the previous menu bar layout…" = "Restoring the previous menu bar layout…";
+"Built-in display is currently primary" = "Built-in display is currently primary";
+"Display configuration changed" = "Display configuration changed";
+"Display mode changed" = "Display mode changed";
+"Displays" = "Displays";
+"External Display" = "External Display";
+"External display is currently primary" = "External display is currently primary";
+"No external display detected" = "No external display detected";
+"Show All" = "Show All";
+"Use Built-in Display Layout" = "Use Built-in Display Layout";

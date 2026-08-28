@@ -1,3 +1,5 @@
+import AppKit
+import Darwin
 import Foundation
 
 enum AIRequestPhase: Equatable {
@@ -33,6 +35,25 @@ struct AIItemDescription: Codable, Equatable, Identifiable {
     let description: String
 }
 
+struct AIRecommendationDevice: Encodable {
+    struct Display: Encodable {
+        let widthPoints: Int
+        let heightPoints: Int
+        let widthPixels: Int
+        let heightPixels: Int
+        let scaleFactor: Double
+        let diagonalInches: Double?
+        let menuBarRightWidthPoints: Int
+        let isBuiltIn: Bool
+        let isMain: Bool
+    }
+
+    let modelIdentifier: String
+    let macOSVersion: String
+    let systemItemManagement: String
+    let displays: [Display]
+}
+
 struct AIRecommendation: Codable, Equatable {
     let recommendedPlanID: String
     let plans: [AIRecommendationPlan]
@@ -57,6 +78,7 @@ private struct AIRecommendationRequest: Encodable {
     let locale: String
     let timeZoneOffsetMinutes: Int
     let appVersion: String
+    let device: AIRecommendationDevice
     let items: [Item]
 }
 
@@ -109,7 +131,8 @@ actor AIRecommendationService {
         items: [MenuBarItem],
         dispositions: [String: ItemDisposition],
         language: AppLanguage,
-        installationID: String
+        installationID: String,
+        device: AIRecommendationDevice
     ) async throws -> AIRecommendation {
         guard !items.isEmpty else { throw AIRecommendationError.noItems }
         guard let endpoint = endpointURL else { throw AIRecommendationError.unavailable }
@@ -128,6 +151,7 @@ actor AIRecommendationService {
             locale: language.localeIdentifier,
             timeZoneOffsetMinutes: TimeZone.current.secondsFromGMT() / 60,
             appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
+            device: device,
             items: mappedItems
         )
 
@@ -190,5 +214,49 @@ actor AIRecommendationService {
             value.hasPrefix("https://")
         else { return nil }
         return URL(string: value)
+    }
+
+    @MainActor
+    static func deviceContext() -> AIRecommendationDevice {
+        let screens = NSScreen.screens
+        let mainDisplayID = CGMainDisplayID()
+        let displays = screens.compactMap { screen -> AIRecommendationDevice.Display? in
+            guard let rawNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+                return nil
+            }
+            let displayID = CGDirectDisplayID(rawNumber.uint32Value)
+            let millimeters = CGDisplayScreenSize(displayID)
+            let diagonalMillimeters = hypot(millimeters.width, millimeters.height)
+            let diagonal = diagonalMillimeters > 0 ? Double(diagonalMillimeters / 25.4) : nil
+            return AIRecommendationDevice.Display(
+                widthPoints: Int(screen.frame.width.rounded()),
+                heightPoints: Int(screen.frame.height.rounded()),
+                widthPixels: CGDisplayPixelsWide(displayID),
+                heightPixels: CGDisplayPixelsHigh(displayID),
+                scaleFactor: screen.backingScaleFactor,
+                diagonalInches: diagonal.map { ($0 * 10).rounded() / 10 },
+                menuBarRightWidthPoints: Int(
+                    (screen.auxiliaryTopRightArea?.width ?? screen.frame.width * 0.38).rounded()
+                ),
+                isBuiltIn: CGDisplayIsBuiltin(displayID) != 0,
+                isMain: displayID == mainDisplayID
+            )
+        }
+        return AIRecommendationDevice(
+            modelIdentifier: hardwareModelIdentifier(),
+            macOSVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            systemItemManagement: PlatformVersion.isMacOS27OrNewer
+                ? "protected-on-macos-27"
+                : "manageable-on-macos-14-through-26",
+            displays: displays
+        )
+    }
+
+    private static func hardwareModelIdentifier() -> String {
+        var size = 0
+        guard sysctlbyname("hw.model", nil, &size, nil, 0) == 0, size > 1 else { return "unknown" }
+        var bytes = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("hw.model", &bytes, &size, nil, 0) == 0 else { return "unknown" }
+        return String(cString: bytes)
     }
 }

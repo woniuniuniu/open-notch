@@ -6,7 +6,11 @@ import ObjectiveC
 /// runtime so older macOS releases keep using the existing window-based path.
 enum MenuBarAgentBridge {
     private static let domain = "com.apple.MenuBarAgent"
+    private static let controlCenterDomain = "com.apple.controlcenter"
     private static let positionsKey = "TrailingItemPreferredPositions"
+    private static let controlCenterPositionPrefix = "NSStatusItem Preferred Position "
+    private static let inventoryLock = NSLock()
+    private static var inventorySupportsVisibility = false
     static let frameworkPath = "/System/Library/PrivateFrameworks/MenuBarClientCore.framework/MenuBarClientCore"
     static let enumerationName = "MenuBarAgent positions (experimental macOS 27)"
 
@@ -16,13 +20,75 @@ enum MenuBarAgentBridge {
         ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
     }
 
+    static var canApplyVisibility: Bool {
+        inventoryLock.lock()
+        defer { inventoryLock.unlock() }
+        return inventorySupportsVisibility
+    }
+
     static func items() -> [MenuBarItem] {
-        guard isAvailable, let positions = positions() else { return [] }
+        guard isAvailable else {
+            setInventorySupportsVisibility(false)
+            return []
+        }
         let extras = AccessibilityResolver.menuExtras()
-        return positions.compactMap(makeItem).filter(isInstalledOrSystemItem).map { item in
+        let positioned = positions()?.compactMap(makeItem).filter(isInstalledOrSystemItem) ?? []
+        // During a MenuBarAgent rebuild, beta releases can expose only the
+        // built-in module slots while Accessibility has no real menu extras.
+        // That is an incomplete inventory, not an empty menu bar; let the
+        // public WindowServer/AX fallback handle this pass instead.
+        let ownBundleID = Bundle.main.bundleIdentifier ?? "com.openbartender.OpenNotch"
+        let supportsVisibility = extras.contains {
+            $0.bundleIdentifier != ownBundleID
+                && $0.bundleIdentifier != "com.apple.MenuBarAgent"
+        } || positioned.contains {
+            $0.semanticIdentifier.hasPrefix("status:")
+                && $0.semanticBundleIdentifier != ownBundleID
+        }
+        setInventorySupportsVisibility(supportsVisibility)
+        if !supportsVisibility {
+            return []
+        }
+        let agentItems = positioned.map { item in
             guard let extra = bestAccessibilityMatch(for: item, in: extras) else { return item }
             return replacingFrame(of: item, with: extra.frame)
-        }.sorted { $0.frame.minX < $1.frame.minX }
+        }
+
+        // macOS 27 beta builds do not always publish
+        // `TrailingItemPreferredPositions`. Accessibility still exposes the
+        // real menu extras in that case, so use those identities as a
+        // read-only inventory instead of treating the menu bar as empty.
+        let accessibilityItems = extras.compactMap { makeItem(from: $0) }
+        let existingKeys = Set(agentItems.map(identityKey))
+        let existingBundles = Set(
+            agentItems
+                .filter { !$0.semanticIdentifier.hasPrefix("module:") }
+                .map(\.semanticBundleIdentifier)
+        )
+        let supplemental = accessibilityItems.filter {
+            !existingKeys.contains(identityKey($0))
+                && ($0.semanticIdentifier.hasPrefix("module:")
+                    || !existingBundles.contains($0.semanticBundleIdentifier))
+        }
+        return (agentItems + supplemental)
+            .filter(isInstalledOrSystemItem)
+            .sorted { lhs, rhs in
+                if lhs.frame.minX == rhs.frame.minX { return lhs.id < rhs.id }
+                return lhs.frame.minX < rhs.frame.minX
+            }
+    }
+
+    private static func setInventorySupportsVisibility(_ supported: Bool) {
+        inventoryLock.lock()
+        inventorySupportsVisibility = supported
+        inventoryLock.unlock()
+    }
+
+    private static func identityKey(_ item: MenuBarItem) -> String {
+        if item.semanticIdentifier.hasPrefix("module:") {
+            return item.semanticIdentifier
+        }
+        return item.semanticBundleIdentifier
     }
 
     private static func isInstalledOrSystemItem(_ item: MenuBarItem) -> Bool {
@@ -36,17 +102,212 @@ enum MenuBarAgentBridge {
     }
 
     static func positions() -> [String: Double]? {
-        guard let rawPositions = CFPreferencesCopyValue(
+        var result = [String: Double]()
+        if let rawPositions = CFPreferencesCopyValue(
             positionsKey as CFString,
             domain as CFString,
             kCFPreferencesCurrentUser,
             kCFPreferencesAnyHost
-        ) as? [String: Any] else { return nil }
-        var result = [String: Double]()
-        for (key, value) in rawPositions {
-            if let number = value as? NSNumber { result[key] = number.doubleValue }
+        ) as? [String: Any] {
+            for (key, value) in rawPositions {
+                if let number = value as? NSNumber { result[key] = number.doubleValue }
+            }
+        }
+
+        // Tahoe 27 currently stores the built-in module slots in
+        // com.apple.controlcenter instead of MenuBarAgent. Keep this bridge
+        // deliberately narrow: only known module names become synthetic
+        // module identities; arbitrary preference keys are ignored.
+        let knownModules = Set([
+            "AudioVideoModule", "Battery", "BentoBox", "BentoBox-0", "Clock",
+            "Display", "Keyboard", "NowPlaying", "ScreenMirroring", "Sound", "WiFi"
+        ])
+        for module in knownModules {
+            let key = controlCenterPositionPrefix + module
+            if let number = CFPreferencesCopyValue(
+                key as CFString,
+                controlCenterDomain as CFString,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesAnyHost
+            ) as? NSNumber {
+                result["module:\(module)"] = number.doubleValue
+            }
+        }
+
+        // Third-party status items keep their preferred position in the
+        // owning app's preference domain on current macOS 27 builds. Read
+        // only the NSStatusItem key family from running apps; this
+        // avoids treating unrelated app preferences as menu bar identities.
+        let bundleIDs = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        for bundleID in bundleIDs {
+            guard let values = CFPreferencesCopyMultiple(
+                nil,
+                bundleID as CFString,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesAnyHost
+            ) as? [String: Any] else { continue }
+            for (key, value) in values {
+                guard
+                    key.hasPrefix(controlCenterPositionPrefix),
+                    let number = value as? NSNumber
+                else { continue }
+                let itemID = String(key.dropFirst(controlCenterPositionPrefix.count))
+                guard !itemID.isEmpty else { continue }
+                result["status:\(bundleID)::\(itemID)"] = number.doubleValue
+            }
         }
         return result.isEmpty ? nil : result
+    }
+
+    private static func writePosition(_ position: Double, for key: String) -> String? {
+        let domain: String
+        let preferenceKey: String
+        if key.hasPrefix("status:") {
+            let payload = String(key.dropFirst("status:".count))
+            let parts = payload.components(separatedBy: "::")
+            guard parts.count >= 2, let bundleID = parts.first, !bundleID.isEmpty else { return nil }
+            domain = bundleID
+            preferenceKey = controlCenterPositionPrefix + parts.dropFirst().joined(separator: "::")
+        } else if key.hasPrefix("module:") {
+            domain = controlCenterDomain
+            preferenceKey = controlCenterPositionPrefix + String(key.dropFirst("module:".count))
+        } else {
+            // Native MenuBarAgent values are written as one dictionary by
+            // writePositions(). Writing one NSNumber per raw key would
+            // corrupt TrailingItemPreferredPositions.
+            return nil
+        }
+        CFPreferencesSetValue(
+            preferenceKey as CFString,
+            NSNumber(value: position),
+            domain as CFString,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        )
+        return domain
+    }
+
+    private static func writePositions(_ values: [String: Double]) -> Bool {
+        var nativePositions = [String: Double]()
+        var domains = Set<String>()
+        for (key, position) in values {
+            if key.hasPrefix("status:") || key.hasPrefix("module:") {
+                if let domain = writePosition(position, for: key) { domains.insert(domain) }
+            } else {
+                nativePositions[key] = position
+            }
+        }
+        if !nativePositions.isEmpty {
+            CFPreferencesSetValue(
+                positionsKey as CFString,
+                nativePositions as CFDictionary,
+                domain as CFString,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesAnyHost
+            )
+            domains.insert(domain)
+        }
+        return domains.allSatisfy {
+            CFPreferencesSynchronize(
+                $0 as CFString,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesAnyHost
+            )
+        }
+    }
+
+    static func preferredPosition(for key: String) -> Double? {
+        positions()?[key]
+    }
+
+    private static func makeItem(from extra: SemanticMenuExtra) -> MenuBarItem? {
+        guard !extra.bundleIdentifier.isEmpty,
+              extra.bundleIdentifier != "com.apple.MenuBarAgent"
+        else { return nil }
+
+        if extra.bundleIdentifier == "com.apple.controlcenter" {
+            guard let module = moduleName(from: extra) else { return nil }
+            return MenuBarItem(
+                id: "agent:module:\(module)",
+                windowID: syntheticWindowID(for: "module:\(module)"),
+                hostPID: extra.hostPID,
+                hostBundleIdentifier: extra.bundleIdentifier,
+                semanticBundleIdentifier: "com.apple.menuextra.\(module.lowercased())",
+                semanticIdentifier: "module:\(module)",
+                rawTitle: module,
+                displayName: moduleDisplayName(module),
+                symbolName: moduleSymbolName(module),
+                frame: extra.frame,
+                isProtected: false
+            )
+        }
+
+        let rawTitle = firstNonEmpty(extra.title, extra.description, extra.identifier)
+        guard !rawTitle.isEmpty else { return nil }
+        let semanticIdentifier = extra.identifier
+        let id: String
+        if extra.bundleIdentifier == "com.microsoft.OneDrive" {
+            id = "app:com.microsoft.OneDrive"
+        } else if !semanticIdentifier.isEmpty {
+            id = "extra:\(semanticIdentifier)"
+        } else {
+            id = "app:\(extra.bundleIdentifier):\(normalizedTitle(rawTitle))"
+        }
+        let displayName = extra.bundleIdentifier == "com.microsoft.OneDrive"
+            ? "OneDrive"
+            : (extra.applicationName.isEmpty ? rawTitle : extra.applicationName)
+        return MenuBarItem(
+            id: id,
+            windowID: syntheticWindowID(for: id),
+            hostPID: extra.hostPID,
+            hostBundleIdentifier: extra.bundleIdentifier,
+            semanticBundleIdentifier: extra.bundleIdentifier,
+            semanticIdentifier: semanticIdentifier,
+            rawTitle: rawTitle,
+            displayName: displayName,
+            symbolName: symbolName(for: extra.bundleIdentifier, itemID: semanticIdentifier),
+            frame: extra.frame,
+            isProtected: extra.bundleIdentifier == Bundle.main.bundleIdentifier
+        )
+    }
+
+    private static func moduleName(from extra: SemanticMenuExtra) -> String? {
+        let haystack = [extra.identifier, extra.title, extra.description]
+            .joined(separator: " ")
+            .lowercased()
+        let matches: [(String, String)] = [
+            ("wifi", "WiFi"), ("wi-fi", "WiFi"), ("battery", "Battery"),
+            ("sound", "Sound"), ("audio", "AudioVideoModule"), ("clock", "Clock"),
+            ("bentobox-0", "BentoBox-0"), ("bentobox", "BentoBox"),
+            ("screenmirroring", "ScreenMirroring"), ("nowplaying", "NowPlaying"),
+            ("display", "Display"), ("keyboard", "Keyboard")
+        ]
+        return matches.first { haystack.contains($0.0) }?.1
+    }
+
+    private static func moduleDisplayName(_ module: String) -> String {
+        switch module {
+        case "Battery": return L("Battery")
+        case "Clock": return L("Clock")
+        case "Sound": return L("Sound")
+        case "WiFi": return "Wi-Fi"
+        case "NowPlaying": return L("Now Playing")
+        case "ScreenMirroring": return L("Screen Mirroring")
+        case "BentoBox", "BentoBox-0", "AudioVideoModule": return L("Control Center")
+        default: return module
+        }
+    }
+
+    private static func moduleSymbolName(_ module: String) -> String {
+        switch module {
+        case "Battery": return "battery.75percent"
+        case "Clock": return "clock"
+        case "Sound", "AudioVideoModule": return "speaker.wave.2.fill"
+        case "WiFi": return "wifi"
+        case "NowPlaying": return "play.circle"
+        case "ScreenMirroring": return "rectangle.on.rectangle"
+        default: return "switch.2"
+        }
     }
 
     /// Updates the preferred order without restarting MenuBarAgent. macOS 27
@@ -84,18 +345,7 @@ enum MenuBarAgentBridge {
         for (index, key) in orderedKeys.enumerated() {
             current[key] = existingSlots[index]
         }
-        CFPreferencesSetValue(
-            positionsKey as CFString,
-            current as CFDictionary,
-            domain as CFString,
-            kCFPreferencesCurrentUser,
-            kCFPreferencesAnyHost
-        )
-        let synchronized = CFPreferencesSynchronize(
-            domain as CFString,
-            kCFPreferencesCurrentUser,
-            kCFPreferencesAnyHost
-        )
+        let synchronized = writePositions(current)
         Diagnostics.shared.append(
             "MenuBarAgent reorder; source=\(sourceKey); target=\(targetKey); " +
             "after=\(placeAfterTarget); slot=\(current[sourceKey] ?? -1); synchronized=\(synchronized)"
@@ -140,18 +390,7 @@ enum MenuBarAgentBridge {
             return false
         }
         current[key] = position
-        CFPreferencesSetValue(
-            positionsKey as CFString,
-            current as CFDictionary,
-            domain as CFString,
-            kCFPreferencesCurrentUser,
-            kCFPreferencesAnyHost
-        )
-        let synchronized = CFPreferencesSynchronize(
-            domain as CFString,
-            kCFPreferencesCurrentUser,
-            kCFPreferencesAnyHost
-        )
+        let synchronized = writePositions(current)
         Diagnostics.shared.append("MenuBarAgent position restored; key=\(key); position=\(position); synchronized=\(synchronized)")
         return synchronized
     }
@@ -178,22 +417,12 @@ enum MenuBarAgentBridge {
         }
         if key.hasPrefix("module:") {
             let module = String(key.dropFirst("module:".count))
-            let names: [String: String] = [
-                "AudioVideoModule": L("Control Center"), "Battery": L("Battery"),
-                "BentoBox-0": L("Control Center"), "Clock": L("Clock"),
-                "NowPlaying": L("Now Playing"), "ScreenMirroring": L("Screen Mirroring"),
-                "Sound": L("Sound"), "WiFi": "Wi-Fi",
-            ]
-            let symbols: [String: String] = [
-                "Battery": "battery.75percent", "Clock": "clock", "Sound": "speaker.wave.2.fill",
-                "WiFi": "wifi", "NowPlaying": "play.circle", "ScreenMirroring": "rectangle.on.rectangle",
-            ]
             return MenuBarItem(
                 id: "agent:\(key)", windowID: syntheticWindowID(for: key), hostPID: 0,
                 hostBundleIdentifier: "com.apple.MenuBarAgent",
                 semanticBundleIdentifier: "com.apple.menuextra.\(module.lowercased())",
-                semanticIdentifier: key, rawTitle: module, displayName: names[module] ?? module,
-                symbolName: symbols[module] ?? "switch.2",
+                semanticIdentifier: key, rawTitle: module, displayName: moduleDisplayName(module),
+                symbolName: moduleSymbolName(module),
                 frame: CGRect(x: position, y: 0, width: 1, height: 24),
                 isProtected: false
             )
@@ -204,6 +433,18 @@ enum MenuBarAgentBridge {
     private static func displayName(from bundleID: String) -> String {
         let component = bundleID.split(separator: ".").last.map(String.init) ?? bundleID
         return component.replacingOccurrences(of: "-", with: " ")
+    }
+
+    private static func normalizedTitle(_ title: String) -> String {
+        title
+            .split(separator: "\n").first
+            .map(String.init)?
+            .lowercased()
+            .filter { $0.isLetter || $0.isNumber } ?? "untitled"
+    }
+
+    private static func firstNonEmpty(_ values: String?...) -> String {
+        values.compactMap { $0 }.first { !$0.isEmpty } ?? ""
     }
 
     private static func symbolName(for bundleID: String, itemID: String) -> String {

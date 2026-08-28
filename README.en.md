@@ -5,7 +5,7 @@ Language: [简体中文](README.md) | English
 [![macOS](https://img.shields.io/badge/macOS-14%2B-111111?logo=apple)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5-FA7343?logo=swift&logoColor=white)](https://www.swift.org/)
 [![License](https://img.shields.io/badge/license-GPL--3.0-only-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.5.1-2ea44f)](https://github.com/woniuniuniu/open-notch)
+[![Version](https://img.shields.io/badge/version-0.8.1-2ea44f)](https://github.com/woniuniuniu/open-notch)
 
 **Take control of your Mac menu bar. Open source, native, and built to keep OneDrive in place.**
 
@@ -56,13 +56,14 @@ Open Notch is an independent implementation, not an official Bartender or Ice re
 ## Features
 
 - Discover, search, and manage menu bar items with Visible / Hidden states.
-- Always Pinned items for keeping essentials in the visible menu bar area.
+- Historical item management: configure an app even when it is not currently running.
 - Expand, collapse, and restore the hidden area.
-- OneDrive dynamic menu bar guardian with a manual **Reset Now** action.
+- OneDrive uses its stable bundle identity and the same frontend rules as every other app.
 - Status item menu with expand, scan, settings, restart, and quit actions.
 - English by default, with manual Simplified Chinese switching.
 - Light and Dark appearance modes.
 - Open at Login and automatic layout restoration.
+- External display mode: show all items on an external primary display or reuse the built-in layout.
 - Accessibility status check with a direct System Settings shortcut.
 
 Apple calls the strip at the top of the Mac screen the **menu bar**, and the icons on its right side **menu bar items**. That is why “menu bar manager” is the clearest English description of Open Notch.

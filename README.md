@@ -5,7 +5,7 @@
 [![macOS](https://img.shields.io/badge/macOS-14%2B-111111?logo=apple)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5-FA7343?logo=swift&logoColor=white)](https://www.swift.org/)
 [![License](https://img.shields.io/badge/license-GPL--3.0-only-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.5.1-2ea44f)](https://github.com/woniuniuniu/open-notch)
+[![Version](https://img.shields.io/badge/version-0.8.1-2ea44f)](https://github.com/woniuniuniu/open-notch)
 
 **整理你的 Mac 菜单栏。开源、原生，也能把 OneDrive 稳稳钉住。**
 
@@ -56,13 +56,14 @@ Open Notch 是独立实现，不是 Bartender 或 Ice 的官方版本，也不�
 ## 功能
 
 - 菜单栏项目发现、搜索以及 Visible / Hidden 管理。
-- Always Pinned 项目：常用项目可以保持在菜单栏可见区域。
+- 历史项目管理：即使应用当前没有运行，也可以提前配置它的显示状态。
 - 隐藏区展开、收起和恢复。
-- OneDrive 动态菜单栏图标守护与手动“立即复位”。
+- OneDrive 使用稳定的 Bundle ID 进行识别和持续同步，前端与其他 App 一视同仁。
 - 菜单栏图标菜单：展开隐藏区、扫描项目、打开设置、重启 Open Notch、退出。
 - 默认英文，可手动切换简体中文。
 - Light / Dark 外观模式。
 - 登录时打开与自动恢复菜单栏布局。
+- 外接显示器模式：外接屏可选择显示全部项目或沿用内建屏布局。
 - 辅助功能权限状态检查和系统设置快捷入口。
 
 在 Apple 的官方语境里，Mac 屏幕顶部叫 **菜单栏（menu bar）**，右侧这些图标叫 **菜单栏项目（menu bar items）**。中文用户也常把它叫作状态栏或顶栏，所以你也可以把 Open Notch 理解为 Mac 状态栏图标管理工具。

@@ -182,3 +182,15 @@
 "Save compatibility details and recent activity to Desktop" = "把兼容性信息和最近活动保存到桌面";
 "Debug log exported to Desktop" = "Debug 日志已导出到桌面";
 "Debug log export failed" = "Debug 日志导出失败";
+"AI sends an anonymous installation ID, app language and time-zone offset, plus app names, bundle identifiers, and visible or hidden states. Raw Accessibility trees, screenshots, paths, and usernames never leave your Mac." = "AI 会发送匿名安装 ID、应用语言、时区偏移，以及应用名称、Bundle ID 和显示状态。原始辅助功能树、截图、路径和用户名不会离开你的 Mac。";
+"AI requests include the Mac model identifier, display geometry, macOS version, and scanned menu bar item names. They are processed by the Open Notch service and DeepSeek. Serial numbers and screen contents are never sent. Each installation can request up to three recommendations per local day." = "AI 请求会包含 Mac 型号标识、屏幕尺寸与可用宽度、macOS 版本和已扫描的菜单栏项目名称，并由若栏服务和 DeepSeek 处理。不会发送序列号或屏幕内容。每个安装实例每天最多生成 3 次建议。";
+"Restoring the previous menu bar layout…" = "正在恢复之前的菜单栏布局…";
+"Built-in display is currently primary" = "当前以内建显示器为主屏";
+"Display configuration changed" = "显示器配置已变化";
+"Display mode changed" = "显示器模式已切换";
+"Displays" = "显示器";
+"External Display" = "外接显示器";
+"External display is currently primary" = "当前以外接显示器为主屏";
+"No external display detected" = "没有检测到外接显示器";
+"Show All" = "外接屏全部显示";
+"Use Built-in Display Layout" = "沿用内建屏布局";

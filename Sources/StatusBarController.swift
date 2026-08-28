@@ -17,18 +17,19 @@ final class StatusBarController: NSObject {
     var onToggle: (() -> Void)?
     var onOpenSettings: (() -> Void)?
     var onRefresh: (() -> Void)?
-    var onToggleGuardian: (() -> Void)?
     var onRestart: (() -> Void)?
     var onExportDebug: (() -> Void)?
 
     override init() {
-        let defaults = UserDefaults.standard
-        let toggleKey = "NSStatusItem Preferred Position \(AutosaveName.toggle)"
-        let boundaryKey = "NSStatusItem Preferred Position \(AutosaveName.boundary)"
-        // A second menu bar manager can persist a new position for these control
-        // items. Reassert their adjacent order before AppKit recreates them.
-        defaults.set(0.0, forKey: toggleKey)
-        defaults.set(1.0, forKey: boundaryKey)
+        if !PlatformVersion.isMacOS27OrNewer {
+            let defaults = UserDefaults.standard
+            let toggleKey = "NSStatusItem Preferred Position \(AutosaveName.toggle)"
+            let boundaryKey = "NSStatusItem Preferred Position \(AutosaveName.boundary)"
+            // Legacy hiding relies on these two control items remaining
+            // adjacent. macOS 27 preserves the user's chosen toggle position.
+            defaults.set(0.0, forKey: toggleKey)
+            defaults.set(1.0, forKey: boundaryKey)
+        }
 
         boundaryItem = NSStatusBar.system.statusItem(withLength: 0)
         toggleItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -53,7 +54,43 @@ final class StatusBarController: NSObject {
         rawWindow(for: toggleItem)?.windowID
     }
 
+    var toggleMenuBarItem: MenuBarItem? {
+        let raw = rawWindow(for: toggleItem)
+        let detectedFrame = raw?.frame ?? statusItemFrame(for: toggleItem)
+        let frame = (detectedFrame?.width ?? 0) > 1 ? detectedFrame! : estimatedToggleFrame
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.openbartender.OpenNotch"
+        let key = "status:\(bundleID)::OpenNotch.Toggle"
+        return MenuBarItem(
+            id: "agent:\(key)", windowID: raw?.windowID ?? 0,
+            hostPID: raw?.hostPID ?? ProcessInfo.processInfo.processIdentifier,
+            hostBundleIdentifier: bundleID, semanticBundleIdentifier: bundleID,
+            semanticIdentifier: key, rawTitle: "OpenNotch.Toggle",
+            displayName: Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Open Notch",
+            symbolName: "menubar.rectangle", frame: frame, isProtected: false
+        )
+    }
+
+    private var estimatedToggleFrame: CGRect {
+        let screen = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        return CGRect(x: screen.maxX - 220, y: 0, width: 24, height: 24)
+    }
+
     func setExpanded(_ expanded: Bool) {
+        // macOS 27 hides items through MenuBarAgent. A wide transparent
+        // boundary window is unnecessary there and can intercept clicks meant
+        // for Wi-Fi, Battery, and other system items.
+        if PlatformVersion.isMacOS27OrNewer {
+            boundaryWidthConstraint?.isActive = false
+            boundaryItem.length = 0
+            if let window = boundaryItem.button?.window {
+                window.setContentSize(NSSize(width: 1, height: window.frame.height))
+                window.ignoresMouseEvents = true
+            }
+            toggleItem.button?.contentTintColor = nil
+            toggleItem.button?.toolTip = L("App Name")
+            return
+        }
+
         if expanded {
             boundaryItem.length = 0
             boundaryWidthConstraint?.isActive = false
@@ -99,7 +136,21 @@ final class StatusBarController: NSObject {
         }
     }
 
-    func updateMenu(isExpanded: Bool, guardianEnabled: Bool, hasAccessibilityPermission: Bool) {
+    /// Persists the Open Notch status item next to an item that has a native
+    /// MenuBarAgent slot. This path never posts mouse events.
+    func moveToggle(adjacentTo item: MenuBarItem, placeAfter: Bool) -> Bool {
+        guard let target = MenuBarAgentBridge.preferredPosition(for: item.semanticIdentifier) else {
+            return false
+        }
+        let key = "NSStatusItem Preferred Position \(AutosaveName.toggle)"
+        UserDefaults.standard.set(target + (placeAfter ? 0.25 : -0.25), forKey: key)
+        toggleItem.autosaveName = nil
+        toggleItem.autosaveName = AutosaveName.toggle
+        requestMenuBarPositionRefresh()
+        return true
+    }
+
+    func updateMenu(isExpanded: Bool, hasAccessibilityPermission: Bool) {
         let menu = NSMenu(title: L("App Name"))
         menu.autoenablesItems = false
 
@@ -129,16 +180,6 @@ final class StatusBarController: NSObject {
         visibilityItem.image = NSImage(systemSymbolName: isExpanded ? "eye.slash" : "eye", accessibilityDescription: nil)
         visibilityItem.isEnabled = true
         menu.addItem(visibilityItem)
-
-        let guardianItem = NSMenuItem(
-            title: L("Keep OneDrive Pinned"),
-            action: #selector(toggleGuardianFromMenu),
-            keyEquivalent: ""
-        )
-        guardianItem.target = self
-        guardianItem.state = guardianEnabled ? .on : .off
-        guardianItem.isEnabled = true
-        menu.addItem(guardianItem)
 
         let refreshItem = NSMenuItem(title: L("Scan Now"), action: #selector(refreshFromMenu), keyEquivalent: "r")
         refreshItem.target = self
@@ -235,8 +276,35 @@ final class StatusBarController: NSObject {
         return MenuBarDiscovery.closestStatusWindow(to: cgFrame)
     }
 
+    private func statusItemFrame(for item: NSStatusItem) -> CGRect? {
+        if let button = item.button {
+            let accessibilityFrame = button.accessibilityFrame()
+            if accessibilityFrame.width > 0, accessibilityFrame.height > 0,
+               let screen = NSScreen.screens.first(where: { $0.frame.intersects(accessibilityFrame) }) {
+                return CGRect(
+                    x: accessibilityFrame.minX,
+                    y: screen.frame.maxY - accessibilityFrame.maxY,
+                    width: accessibilityFrame.width,
+                    height: accessibilityFrame.height
+                )
+            }
+        }
+        guard
+            let window = item.button?.window,
+            let screen = window.screen,
+            let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+        else { return nil }
+        let cocoaFrame = window.frame
+        let displayBounds = CGDisplayBounds(CGDirectDisplayID(screenNumber.uint32Value))
+        return CGRect(
+            x: displayBounds.minX + (cocoaFrame.minX - screen.frame.minX),
+            y: displayBounds.minY + (screen.frame.maxY - cocoaFrame.maxY),
+            width: cocoaFrame.width,
+            height: cocoaFrame.height
+        )
+    }
+
     @objc private func toggleFromMenu() { onToggle?() }
-    @objc private func toggleGuardianFromMenu() { onToggleGuardian?() }
     @objc private func refreshFromMenu() { onRefresh?() }
     @objc private func openSettingsFromMenu() { onOpenSettings?() }
     @objc private func exportDebug() { onExportDebug?() }

@@ -6,6 +6,7 @@ final class ApplicationIconResolver {
     static let shared = ApplicationIconResolver()
 
     private var cache = [String: NSImage]()
+    private var nameCache = [String: String]()
 
     private init() {}
 
@@ -55,5 +56,32 @@ final class ApplicationIconResolver {
         copy.isTemplate = false
         cache[bundleIdentifier] = copy
         return copy
+    }
+
+    func applicationName(for bundleIdentifier: String, fallback: String) -> String {
+        guard !bundleIdentifier.isEmpty else { return fallback }
+        if let cached = nameCache[bundleIdentifier] { return cached }
+        if let runningName = NSWorkspace.shared.runningApplications
+            .first(where: { $0.bundleIdentifier == bundleIdentifier })?
+            .localizedName,
+           !runningName.isEmpty
+        {
+            nameCache[bundleIdentifier] = runningName
+            return runningName
+        }
+        guard
+            let applicationURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier),
+            let bundle = Bundle(url: applicationURL)
+        else { return fallback }
+        let localized = bundle.localizedInfoDictionary
+        let info = bundle.infoDictionary
+        let resolved = (localized?["CFBundleDisplayName"] as? String)
+            ?? (localized?["CFBundleName"] as? String)
+            ?? (info?["CFBundleDisplayName"] as? String)
+            ?? (info?["CFBundleName"] as? String)
+            ?? applicationURL.deletingPathExtension().lastPathComponent
+        let name = resolved.isEmpty ? fallback : resolved
+        nameCache[bundleIdentifier] = name
+        return name
     }
 }

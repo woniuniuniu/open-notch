@@ -7,11 +7,13 @@ STAGE="$(mktemp -d /tmp/OpenNotch-build.XXXXXX)"
 APP="$STAGE/Open Notch.app"
 OUTPUT_APP="$BUILD/Open Notch.app"
 OUTPUT_ZIP="$BUILD/Open Notch.zip"
+OUTPUT_DMG="$BUILD/Open Notch 0.8.1.dmg"
 ICONSET="$STAGE/AppIcon.iconset"
 BASE_ICON="$STAGE/AppIcon-1024.png"
 trap 'rm -rf "$STAGE"' EXIT
 
-rm -rf "$OUTPUT_APP" "$OUTPUT_ZIP"
+DMG_STAGE="$STAGE/dmg"
+rm -rf "$OUTPUT_APP" "$OUTPUT_ZIP" "$OUTPUT_DMG" "$DMG_STAGE"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$ICONSET"
 
 swift "$ROOT/Tools/make_icon.swift" "$BASE_ICON"
@@ -70,5 +72,15 @@ codesign --verify --deep --strict "$APP"
 ditto -c -k --norsrc --noextattr --keepParent "$APP" "$STAGE/Open Notch.zip"
 ditto --norsrc --noextattr "$APP" "$OUTPUT_APP"
 ditto --norsrc --noextattr "$STAGE/Open Notch.zip" "$OUTPUT_ZIP"
+# Finder/File Provider can attach metadata to a copied bundle after the
+# staging signature step. Remove it from distributable artifacts so strict
+# code-signature verification also succeeds after unzipping the archive.
+xattr -r -c "$OUTPUT_APP" 2>/dev/null || true
+xattr -c "$OUTPUT_ZIP" 2>/dev/null || true
+
+mkdir -p "$DMG_STAGE"
+ditto --norsrc --noextattr "$APP" "$DMG_STAGE/Open Notch.app"
+ln -s /Applications "$DMG_STAGE/Applications"
+diskutil image create from --volumeName "Open Notch" --format UDZO "$DMG_STAGE" "$OUTPUT_DMG" >/dev/null
 
 echo "$OUTPUT_APP"

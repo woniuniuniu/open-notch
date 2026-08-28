@@ -16,27 +16,17 @@ enum MenuBarMoveEngine {
         }
     }
 
-    /// Keeps WindowServer's synthetic menu bar event coordinates invisible
-    /// and restores the pointer exactly where the user left it. Menu bar
-    /// reordering has no public API and still requires a targeted mouse event,
-    /// but that event must never take ownership of the user's visible cursor.
+    /// Observes real HID input while a legacy targeted event is routed. The
+    /// compatibility path never hides, warps, or otherwise moves the user's
+    /// visible cursor; macOS 27 and later do not create this object at all.
     private final class CursorShield {
-        let originalLocation: CGPoint
-        let displayID: CGDirectDisplayID
-        private var cursorWasHidden = false
         private let lock = NSLock()
-        private var latestPhysicalLocation: CGPoint
         private var receivedPhysicalInput = false
-        private var syntheticGestureInProgress = false
         private var eventTap: CFMachPort?
         private var runLoopSource: CFRunLoopSource?
         private let runLoop: CFRunLoop
 
         init?() {
-            guard let originalLocation = CGEvent(source: nil)?.location else { return nil }
-            self.originalLocation = originalLocation
-            latestPhysicalLocation = originalLocation
-            displayID = Self.display(containing: originalLocation) ?? CGMainDisplayID()
             guard let currentRunLoop = CFRunLoopGetCurrent() else { return nil }
             runLoop = currentRunLoop
 
@@ -58,9 +48,7 @@ enum MenuBarMoveEngine {
                     // Open Notch tags every synthetic event with nonzero user
                     // data. Only untagged HID events are genuine user input;
                     // otherwise our own move would cancel itself immediately.
-                    if event.getIntegerValueField(.eventSourceUserData) == 0,
-                       !shield.isSyntheticGestureInProgress
-                    {
+                    if event.getIntegerValueField(.eventSourceUserData) == 0 {
                         shield.recordPhysicalInput(at: event.location)
                     }
                     return Unmanaged.passUnretained(event)
@@ -74,7 +62,6 @@ enum MenuBarMoveEngine {
                     CGEvent.tapEnable(tap: eventTap, enable: true)
                 }
             }
-            cursorWasHidden = CGDisplayHideCursor(displayID) == .success
         }
 
         var userInteracted: Bool {
@@ -83,49 +70,16 @@ enum MenuBarMoveEngine {
             return receivedPhysicalInput
         }
 
-        var isSyntheticGestureInProgress: Bool {
-            lock.lock()
-            defer { lock.unlock() }
-            return syntheticGestureInProgress
-        }
-
-        func setSyntheticGestureInProgress(_ active: Bool) {
-            lock.lock()
-            syntheticGestureInProgress = active
-            lock.unlock()
-        }
-
         func finish() {
             if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: false) }
             if let runLoopSource { CFRunLoopRemoveSource(runLoop, runLoopSource, .commonModes) }
             if let eventTap { CFMachPortInvalidate(eventTap) }
-
-            lock.lock()
-            let restoreLocation = latestPhysicalLocation
-            lock.unlock()
-            // A real HID event updates latestPhysicalLocation, while our
-            // synthetic session events do not. If the user moved or clicked
-            // during a background operation, restore to their newest physical
-            // position instead of yanking them back to an older location.
-            CGWarpMouseCursorPosition(restoreLocation)
-            if cursorWasHidden {
-                CGDisplayShowCursor(displayID)
-            }
         }
 
-        private func recordPhysicalInput(at location: CGPoint) {
+        private func recordPhysicalInput(at _: CGPoint) {
             lock.lock()
-            latestPhysicalLocation = location
             receivedPhysicalInput = true
             lock.unlock()
-        }
-
-        private static func display(containing point: CGPoint) -> CGDirectDisplayID? {
-            var count: UInt32 = 0
-            guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return nil }
-            var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
-            guard CGGetActiveDisplayList(count, &displays, &count) == .success else { return nil }
-            return displays.prefix(Int(count)).first { CGDisplayBounds($0).contains(point) }
         }
     }
 
@@ -135,64 +89,6 @@ enum MenuBarMoveEngine {
         .permitLocalKeyboardEvents,
         .permitSystemDefinedEvents,
     ]
-
-    /// macOS 27 fallback for MenuBarAgent builds that persist preferred slots
-    /// but do not apply them during a compositor layout nudge. It reproduces
-    /// the system's native Command-drag while the cursor is hidden and restores
-    /// the user's latest physical pointer location afterward.
-    static func reorder(
-        _ item: MenuBarItem,
-        adjacentTo target: MenuBarItem,
-        placeAfterTarget: Bool
-    ) -> Result {
-        guard AccessibilityResolver.isTrusted() else { return .failed }
-        guard item.frame.width > 0, target.frame.width > 0,
-              let shield = CursorShield(),
-              let source = CGEventSource(stateID: .hidSystemState)
-        else { return .failed }
-        defer { shield.finish() }
-        shield.setSyntheticGestureInProgress(true)
-        defer { shield.setSyntheticGestureInProgress(false) }
-
-        source.setLocalEventsFilterDuringSuppressionState(
-            permitAllEvents,
-            state: .eventSuppressionStateRemoteMouseDrag
-        )
-        source.localEventsSuppressionInterval = 0
-        let start = CGPoint(x: item.frame.midX, y: item.frame.midY)
-        let targetInset = max(4, target.frame.width * 0.25)
-        let end = CGPoint(
-            // AX frames can overlap by a few points in MenuBarAgent. Drop in
-            // the target's near/far quarter instead of beyond its bounds, or
-            // the gesture may be interpreted as targeting the next icon.
-            x: placeAfterTarget
-                ? target.frame.maxX - targetInset
-                : target.frame.minX + targetInset,
-            y: target.frame.midY
-        )
-        guard let moved = pointerEvent(.mouseMoved, at: start, source: source),
-              let down = pointerEvent(.leftMouseDown, at: start, source: source),
-              let up = pointerEvent(.leftMouseUp, at: end, source: source)
-        else { return .failed }
-
-        moved.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.03)
-        down.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.06)
-        for step in 1...24 {
-            guard !shield.userInteracted else { return .deferredForUserInput }
-            let progress = CGFloat(step) / 24
-            let point = CGPoint(
-                x: start.x + (end.x - start.x) * progress,
-                y: start.y + (end.y - start.y) * progress
-            )
-            pointerEvent(.leftMouseDragged, at: point, source: source)?.post(tap: .cghidEventTap)
-            Thread.sleep(forTimeInterval: 0.018)
-        }
-        up.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.16)
-        return shield.userInteracted ? .deferredForUserInput : .moved
-    }
 
     static func move(
         _ item: MenuBarItem,
@@ -365,21 +261,6 @@ enum MenuBarMoveEngine {
         event.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(windowID))
         event.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(windowID))
         event.setIntegerValueField(windowIDField, value: Int64(windowID))
-        return event
-    }
-
-    private static func pointerEvent(
-        _ type: CGEventType,
-        at point: CGPoint,
-        source: CGEventSource
-    ) -> CGEvent? {
-        guard let event = CGEvent(
-            mouseEventSource: source,
-            mouseType: type,
-            mouseCursorPosition: point,
-            mouseButton: .left
-        ) else { return nil }
-        event.flags = .maskCommand
         return event
     }
 

@@ -2,23 +2,16 @@ import AppKit
 import SwiftUI
 
 private final class SettingsHostingView<Content: View>: NSHostingView<Content> {
-    @available(macOS 27.0, *)
-    override var cornerConfiguration: NSViewCornerConfiguration? {
-        .uniformCorners(radius: .containerConcentric(16))
-    }
-
     override func layout() {
         super.layout()
         wantsLayer = true
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
-        if #available(macOS 27.0, *), let radii = effectiveCornerRadii {
-            // The configuration is uniform; using the resolved system value
-            // for the layer mask guarantees identical top and bottom corners.
-            layer?.cornerRadius = radii.topLeft
-        } else {
-            layer?.cornerRadius = 16
-        }
+        // Keep one four-corner mask while still compiling with the macOS 14
+        // SDK used by community contributors. The macOS 27-only concentric
+        // corner API cannot be referenced by older SDKs, even behind an
+        // availability check.
+        layer?.cornerRadius = 16
     }
 }
 
@@ -76,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // corners. The app already supplies its own traffic lights and
                 // chrome, so a borderless resizable window lets one uniform
                 // four-corner mask define the entire settings window.
-                styleMask: [.borderless, .resizable],
+                styleMask: [.borderless, .closable, .miniaturizable, .resizable],
                 backing: .buffered,
                 defer: false
             )
@@ -90,10 +83,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.hasShadow = true
             window.isMovableByWindowBackground = true
             window.minSize = NSSize(width: 470, height: 650)
-            // Let macOS 27 own the standard window radius. A fixed CALayer
-            // radius cannot follow the system's style-dependent window shape.
-            // The new concentric configuration adapts the hosted content to
-            // the effective system window corners.
             window.contentView = SettingsHostingView(rootView: view)
             window.standardWindowButton(.closeButton)?.isHidden = true
             window.standardWindowButton(.miniaturizeButton)?.isHidden = true
