@@ -22,14 +22,6 @@ final class StatusBarController: NSObject {
     var onExportDebug: (() -> Void)?
 
     override init() {
-        let defaults = UserDefaults.standard
-        let toggleKey = "NSStatusItem Preferred Position \(AutosaveName.toggle)"
-        let boundaryKey = "NSStatusItem Preferred Position \(AutosaveName.boundary)"
-        // A second menu bar manager can persist a new position for these control
-        // items. Reassert their adjacent order before AppKit recreates them.
-        defaults.set(0.0, forKey: toggleKey)
-        defaults.set(1.0, forKey: boundaryKey)
-
         boundaryItem = NSStatusBar.system.statusItem(withLength: 0)
         toggleItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
@@ -51,6 +43,21 @@ final class StatusBarController: NSObject {
 
     var toggleWindowID: CGWindowID? {
         rawWindow(for: toggleItem)?.windowID
+    }
+
+    var toggleMenuBarItem: MenuBarItem? {
+        let raw = rawWindow(for: toggleItem)
+        guard let frame = raw?.frame ?? statusItemFrame(for: toggleItem) else { return nil }
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.openbartender.OpenNotch"
+        let key = "status:\(bundleID)::OpenNotch.Toggle"
+        return MenuBarItem(
+            id: "agent:\(key)", windowID: raw?.windowID ?? 0,
+            hostPID: raw?.hostPID ?? ProcessInfo.processInfo.processIdentifier,
+            hostBundleIdentifier: bundleID, semanticBundleIdentifier: bundleID,
+            semanticIdentifier: key, rawTitle: "OpenNotch.Toggle",
+            displayName: Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Open Notch",
+            symbolName: "menubar.rectangle", frame: frame, isProtected: false
+        )
     }
 
     func setExpanded(_ expanded: Bool) {
@@ -233,6 +240,34 @@ final class StatusBarController: NSObject {
             height: cocoaFrame.height
         )
         return MenuBarDiscovery.closestStatusWindow(to: cgFrame)
+    }
+
+    private func statusItemFrame(for item: NSStatusItem) -> CGRect? {
+        if let button = item.button {
+            let accessibilityFrame = button.accessibilityFrame()
+            if accessibilityFrame.width > 0, accessibilityFrame.height > 0,
+               let screen = NSScreen.screens.first(where: { $0.frame.intersects(accessibilityFrame) }) {
+                return CGRect(
+                    x: accessibilityFrame.minX,
+                    y: screen.frame.maxY - accessibilityFrame.maxY,
+                    width: accessibilityFrame.width,
+                    height: accessibilityFrame.height
+                )
+            }
+        }
+        guard
+            let window = item.button?.window,
+            let screen = window.screen,
+            let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+        else { return nil }
+        let cocoaFrame = window.frame
+        let displayBounds = CGDisplayBounds(CGDirectDisplayID(screenNumber.uint32Value))
+        return CGRect(
+            x: displayBounds.minX + (cocoaFrame.minX - screen.frame.minX),
+            y: displayBounds.minY + (screen.frame.maxY - cocoaFrame.maxY),
+            width: cocoaFrame.width,
+            height: cocoaFrame.height
+        )
     }
 
     @objc private func toggleFromMenu() { onToggle?() }

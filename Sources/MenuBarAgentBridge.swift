@@ -19,10 +19,35 @@ enum MenuBarAgentBridge {
     static func items() -> [MenuBarItem] {
         guard isAvailable, let positions = positions() else { return [] }
         let extras = AccessibilityResolver.menuExtras()
-        return positions.compactMap(makeItem).filter(isInstalledOrSystemItem).map { item in
+        var result = positions.compactMap(makeItem).filter(isInstalledOrSystemItem).map { item in
             guard let extra = bestAccessibilityMatch(for: item, in: extras) else { return item }
             return replacingFrame(of: item, with: extra.frame)
-        }.sorted { $0.frame.minX < $1.frame.minX }
+        }
+        if let ownItem = openNotchToggleItem(in: extras) {
+            result.append(ownItem)
+        }
+        return result.sorted { $0.frame.minX < $1.frame.minX }
+    }
+
+    private static func openNotchToggleItem(in extras: [SemanticMenuExtra]) -> MenuBarItem? {
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.openbartender.OpenNotch"
+        let extra = extras.first(where: {
+            $0.bundleIdentifier == bundleID
+                && ($0.identifier == "OpenNotch.Toggle"
+                    || $0.title == "OpenNotch.Toggle"
+                    || $0.description == "OpenNotch.Toggle")
+        })
+        let window = MenuBarDiscovery.statusWindows().first { $0.title == "OpenNotch.Toggle" }
+        guard extra != nil || window != nil else { return nil }
+        let key = "status:\(bundleID)::OpenNotch.Toggle"
+        return MenuBarItem(
+            id: "agent:\(key)", windowID: window?.windowID ?? syntheticWindowID(for: key),
+            hostPID: window?.hostPID ?? ProcessInfo.processInfo.processIdentifier,
+            hostBundleIdentifier: bundleID, semanticBundleIdentifier: bundleID,
+            semanticIdentifier: key, rawTitle: "OpenNotch.Toggle",
+            displayName: Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Open Notch",
+            symbolName: "menubar.rectangle", frame: extra?.frame ?? window!.frame, isProtected: false
+        )
     }
 
     private static func isInstalledOrSystemItem(_ item: MenuBarItem) -> Bool {
@@ -173,7 +198,7 @@ enum MenuBarAgentBridge {
                 semanticIdentifier: key, rawTitle: itemID, displayName: name,
                 symbolName: symbolName(for: bundleID, itemID: itemID),
                 frame: CGRect(x: position, y: 0, width: 1, height: 24),
-                isProtected: bundleID == Bundle.main.bundleIdentifier
+                isProtected: false
             )
         }
         if key.hasPrefix("module:") {

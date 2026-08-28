@@ -22,9 +22,6 @@ enum AccessibilityResolver {
         guard AXIsProcessTrusted() else { return [] }
 
         var extras = [SemanticMenuExtra]()
-        let excludedBundles: Set<String> = [
-            Bundle.main.bundleIdentifier ?? "com.openbartender.OpenNotch",
-        ]
         let requiredSystemAgents: Set<String> = [
             "com.apple.controlcenter",
             "com.apple.systemuiserver",
@@ -35,8 +32,9 @@ enum AccessibilityResolver {
         for app in NSWorkspace.shared.runningApplications {
             guard
                 let bundleIdentifier = app.bundleIdentifier,
-                !excludedBundles.contains(bundleIdentifier),
-                app.activationPolicy != .prohibited || requiredSystemAgents.contains(bundleIdentifier)
+                app.activationPolicy != .prohibited
+                    || requiredSystemAgents.contains(bundleIdentifier)
+                    || bundleIdentifier == Bundle.main.bundleIdentifier
             else { continue }
 
             let applicationElement = AXUIElementCreateApplication(app.processIdentifier)

@@ -235,10 +235,10 @@ private struct WindowControlButtons: View {
     }
 
     private func closeSettingsWindow() {
-        let window = NSApp.windows.first {
+        let window = NSApp.keyWindow ?? NSApp.windows.first {
             $0.identifier?.rawValue == "OpenNotch.Settings"
         }
-        window?.performClose(self)
+        window?.orderOut(nil)
     }
 }
 
@@ -879,11 +879,13 @@ private struct MenuItemRow: View {
 
             Spacer(minLength: 12)
 
-            VisibilityControl(selection: Binding(
-                get: { model.disposition(for: item) },
-                set: { model.setDisposition($0, for: item) }
-            ))
-            .disabled(item.isOneDrive && SettingsStore.shared.oneDriveGuardianEnabled)
+            if !item.isOpenNotchControl {
+                VisibilityControl(selection: Binding(
+                    get: { model.disposition(for: item) },
+                    set: { model.setDisposition($0, for: item) }
+                ))
+                .disabled(item.isOneDrive && SettingsStore.shared.oneDriveGuardianEnabled)
+            }
         }
         .padding(.horizontal, 7)
         .frame(height: 60)
@@ -1316,17 +1318,9 @@ private struct GeneralPane: View {
                     }
                     Divider().opacity(0.55)
                     SettingsLine(L("Appearance"), systemImage: "circle.lefthalf.filled", tint: OpenNotchTheme.magenta) {
-                        Picker("", selection: Binding(
-                            get: { settings.appearanceMode },
-                            set: { model.setAppearance($0) }
-                        )) {
-                            ForEach(AppearanceMode.allCases) { mode in
-                                Text(mode.title).tag(mode)
-                            }
+                        AppearanceModeControl(selection: settings.appearanceMode) {
+                            model.setAppearance($0)
                         }
-                        .labelsHidden()
-                        .pickerStyle(.segmented)
-                        .frame(width: 150)
                         .padding(.trailing, 28)
                     }
                 }
@@ -1384,6 +1378,39 @@ private struct GeneralPane: View {
                 }
             }
         }
+    }
+}
+
+private struct AppearanceModeControl: View {
+    let selection: AppearanceMode
+    let onSelect: (AppearanceMode) -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(AppearanceMode.allCases) { mode in
+                Button {
+                    onSelect(mode)
+                } label: {
+                    Text(mode.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .frame(width: 50, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(selection == mode ? Color.primary : Color.secondary)
+                .background {
+                    if selection == mode {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.primary.opacity(0.13))
+                            .shadow(color: .black.opacity(0.12), radius: 1, y: 1)
+                    }
+                }
+            }
+        }
+        .padding(2)
+        .frame(width: 154, height: 28)
+        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

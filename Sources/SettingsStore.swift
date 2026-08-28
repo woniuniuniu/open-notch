@@ -172,6 +172,9 @@ final class SettingsStore: ObservableObject {
     }
 
     func disposition(for item: MenuBarItem) -> ItemDisposition {
+        if item.isOpenNotchControl {
+            return .visible
+        }
         if item.isOneDrive, oneDriveGuardianEnabled {
             return .visible
         }

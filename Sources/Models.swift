@@ -32,6 +32,11 @@ struct MenuBarItem: Identifiable, Equatable {
         semanticBundleIdentifier == "com.microsoft.OneDrive"
     }
 
+    var isOpenNotchControl: Bool {
+        semanticBundleIdentifier == (Bundle.main.bundleIdentifier ?? "com.openbartender.OpenNotch")
+            && (semanticIdentifier.contains("OpenNotch.Toggle") || rawTitle.contains("OpenNotch.Toggle"))
+    }
+
     var isAnonymousControlCenterItem: Bool {
         semanticBundleIdentifier == "com.apple.controlcenter" && semanticIdentifier.isEmpty
     }

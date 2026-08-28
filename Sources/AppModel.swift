@@ -250,6 +250,22 @@ final class AppModel: ObservableObject {
         let target = physicalItems[targetIndex]
         guard !source.isProtected, !target.isProtected else { return }
         let placeAfterTarget = sourceIndex < targetIndex
+
+        // Our AppKit status item does not appear in MenuBarAgent's persisted
+        // position dictionary. Command-drag it directly; AppKit persists the
+        // resulting position through its autosave name.
+        if source.isOpenNotchControl || target.isOpenNotchControl {
+            let result = MenuBarMoveEngine.reorder(
+                source,
+                adjacentTo: target,
+                placeAfterTarget: placeAfterTarget
+            )
+            Diagnostics.shared.append("Open Notch menu item reorder result=\(String(describing: result))")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.refresh(reason: L("Manual reorder"), reconcile: false)
+            }
+            return
+        }
         guard MenuBarAgentBridge.moveItem(
             source.semanticIdentifier,
             adjacentTo: target.semanticIdentifier,
@@ -393,13 +409,19 @@ final class AppModel: ObservableObject {
                     self.isScanning = false
                     return
                 }
-                let scanChanged = !self.isEquivalentScan(scanned)
+                var resolvedItems = scanned
+                if let toggle = self.statusBar?.toggleMenuBarItem,
+                   !resolvedItems.contains(where: { $0.isOpenNotchControl }) {
+                    resolvedItems.append(toggle)
+                }
+                resolvedItems.sort { $0.frame.minX < $1.frame.minX }
+                let scanChanged = !self.isEquivalentScan(resolvedItems)
                 self.itemsByWindowID = Dictionary(
-                    scanned.map { ($0.windowID, $0) },
+                    resolvedItems.map { ($0.windowID, $0) },
                     uniquingKeysWith: { current, _ in current }
                 )
                 if scanChanged {
-                    self.items = scanned.sorted { lhs, rhs in
+                    self.items = resolvedItems.sorted { lhs, rhs in
                         // MenuBarAgent positions are the user's physical order.
                         // Preserve them on macOS 27 so drag sorting remains
                         // stable; the legacy path keeps OneDrive prominent.
@@ -411,11 +433,11 @@ final class AppModel: ObservableObject {
                 }
                 self.refreshMenuItemSections()
                 self.updateActualDispositions()
-                self.settings.remember(scanned)
+                self.settings.remember(resolvedItems)
                 self.applyMenuBarAgentVisibility(reason: reason)
                 self.lastScanDate = .now
                 self.isScanning = false
-                Diagnostics.shared.append("Scan finished; source=\(self.enumerationName); items=\(scanned.count); visible=\(self.visibleItems.count); hidden=\(self.hiddenItems.count); accessibility=\(self.hasAccessibilityPermission)")
+                Diagnostics.shared.append("Scan finished; source=\(self.enumerationName); items=\(resolvedItems.count); visible=\(self.visibleItems.count); hidden=\(self.hiddenItems.count); accessibility=\(self.hasAccessibilityPermission)")
                 self.objectWillChange.send()
 
                 if self.identityRebindInProgress {
@@ -450,6 +472,7 @@ final class AppModel: ObservableObject {
     }
 
     func setDisposition(_ disposition: ItemDisposition, for item: MenuBarItem) {
+        guard !item.isOpenNotchControl || disposition == .visible else { return }
         Diagnostics.shared.append("User disposition; item=\(item.displayName); id=\(item.id); window=\(item.windowID); hostPID=\(item.hostPID); target=\(disposition.rawValue)")
         prepareNativePosition(for: item, movingTo: disposition)
         settings.setDisposition(disposition, for: item.id)
@@ -658,7 +681,10 @@ final class AppModel: ObservableObject {
     }
 
     func disposition(for item: MenuBarItem) -> ItemDisposition {
-        actualDispositions[item.id] ?? settings.disposition(for: item)
+        if item.isOpenNotchControl {
+            return .visible
+        }
+        return actualDispositions[item.id] ?? settings.disposition(for: item)
     }
 
     private func updateActualDispositions() {
