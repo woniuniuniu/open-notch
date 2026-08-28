@@ -26,6 +26,30 @@ enum MenuBarAgentBridge {
         if let ownItem = openNotchToggleItem(in: extras) {
             result.append(ownItem)
         }
+        // A running status item can be absent from the preference dictionary
+        // until MenuBarAgent has laid it out at least once. Keep every real AX
+        // menu extra in the inventory so newly launched apps (for example
+        // ChatGPT and FlClash) are never silently omitted from Settings.
+        for (index, extra) in extras.enumerated()
+        where extra.bundleIdentifier != "com.apple.weather.menu" && !isRepresented(extra, in: result) {
+            let rawTitle = [extra.identifier, extra.title, extra.description]
+                .first(where: { !$0.isEmpty }) ?? "Item-\(index)"
+            let key = "status:\(extra.bundleIdentifier)::\(rawTitle)"
+            let window = MenuBarDiscovery.closestStatusWindow(to: extra.frame)
+            let pid = NSWorkspace.shared.runningApplications.first {
+                $0.bundleIdentifier == extra.bundleIdentifier
+            }?.processIdentifier ?? window?.hostPID ?? 0
+            result.append(MenuBarItem(
+                id: "agent:\(key)", windowID: window?.windowID ?? syntheticWindowID(for: key),
+                hostPID: pid, hostBundleIdentifier: extra.bundleIdentifier,
+                semanticBundleIdentifier: extra.bundleIdentifier,
+                semanticIdentifier: key, rawTitle: rawTitle,
+                displayName: extra.applicationName,
+                symbolName: symbolName(for: extra.bundleIdentifier, itemID: rawTitle),
+                frame: extra.frame,
+                isProtected: extra.bundleIdentifier == Bundle.main.bundleIdentifier
+            ))
+        }
         // Weather is an independent system status item on macOS 27 and is not
         // represented in TrailingItemPreferredPositions. Add its real AX item
         // so it can still be hidden and physically reordered like other extras.
@@ -47,6 +71,14 @@ enum MenuBarAgentBridge {
             ))
         }
         return result.sorted { $0.frame.minX < $1.frame.minX }
+    }
+
+    private static func isRepresented(_ extra: SemanticMenuExtra, in items: [MenuBarItem]) -> Bool {
+        items.contains { item in
+            item.semanticBundleIdentifier == extra.bundleIdentifier
+                && abs(item.frame.midX - extra.frame.midX) < 2
+                && abs(item.frame.midY - extra.frame.midY) < 2
+        }
     }
 
     private static func openNotchToggleItem(in extras: [SemanticMenuExtra]) -> MenuBarItem? {

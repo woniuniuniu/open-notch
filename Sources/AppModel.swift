@@ -1082,14 +1082,24 @@ final class AppModel: ObservableObject {
                 allowedSystemItems.remove(id)
             }
         }
-        var allowed = Set(items.compactMap { item -> String? in
-            guard !item.semanticIdentifier.hasPrefix("module:") else { return nil }
-            return effectiveExpanded
-                || item.id == forcedItem?.id
-                || settings.disposition(for: item) == .visible
-                ? item.semanticBundleIdentifier
-                : nil
+        // Assessment mode is allow-list based. Starting from only the items
+        // already enumerated creates a deadlock: a newly launched app is not
+        // enumerated because it is not allowed, then remains hidden forever.
+        // Start with every running bundle and remove only bundles belonging to
+        // items the user explicitly marked hidden.
+        var allowed = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        allowed.formUnion(items.compactMap { item in
+            item.semanticIdentifier.hasPrefix("module:") ? nil : item.semanticBundleIdentifier
         })
+        if !effectiveExpanded {
+            let explicitlyHiddenBundles = Set(settings.policies.compactMap { id, disposition -> String? in
+                guard disposition == .hidden else { return nil }
+                return items.first(where: { $0.id == id })?.semanticBundleIdentifier
+                    ?? settings.knownItems[id]?.semanticBundleIdentifier
+            })
+            allowed.subtract(explicitlyHiddenBundles)
+        }
+        if let forcedItem { allowed.insert(forcedItem.semanticBundleIdentifier) }
         if settings.oneDriveGuardianEnabled { allowed.insert("com.microsoft.OneDrive") }
         // Weather is hosted by a separate system process and is not always
         // returned by MenuBarAgent enumeration. Keep it allowed so the user's
