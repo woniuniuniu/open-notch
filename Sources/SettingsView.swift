@@ -799,6 +799,22 @@ private struct MenuItemRow: View {
         .frame(height: 60)
         .background((isHovering || isDropTargeted) ? OpenNotchTheme.hoverFill(for: colorScheme) : .clear)
         .clipShape(RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
+        .overlay {
+            if isDropTargeted, model.draggedMenuItemID != item.id {
+                VStack(spacing: 0) {
+                    if insertsAfterTarget { Spacer(minLength: 0) }
+                    Capsule()
+                        .fill(OpenNotchTheme.cyan)
+                        .frame(height: 4)
+                        .padding(.horizontal, 8)
+                        .shadow(color: OpenNotchTheme.cyan.opacity(0.65), radius: 5)
+                    if !insertsAfterTarget { Spacer(minLength: 0) }
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                .allowsHitTesting(false)
+            }
+        }
+        .animation(.easeOut(duration: 0.14), value: isDropTargeted)
         .contentShape(Rectangle())
         .modifier(MenuRowDragModifier(enabled: MenuBarAgentBridge.isAvailable && allowsReordering, item: item))
         .onHover { isHovering = $0 }
@@ -807,6 +823,7 @@ private struct MenuItemRow: View {
                 return false
             }
             model.reorderMenuBarItem(sourceID: sourceID, targetID: item.id)
+            model.draggedMenuItemID = nil
             return true
         } isTargeted: { targeted in
             isDropTargeted = targeted
@@ -817,6 +834,14 @@ private struct MenuItemRow: View {
     private var secondaryText: String {
         settings.aiDescription(for: item.id, language: settings.language)
             ?? (item.detail.isEmpty ? item.semanticBundleIdentifier : item.detail)
+    }
+
+    private var insertsAfterTarget: Bool {
+        guard let sourceID = model.draggedMenuItemID,
+              let sourceIndex = model.filteredVisibleItems.firstIndex(where: { $0.id == sourceID }),
+              let targetIndex = model.filteredVisibleItems.firstIndex(where: { $0.id == item.id })
+        else { return false }
+        return sourceIndex < targetIndex
     }
 
     private func reorderButton(_ symbol: String, offset: Int, help: String) -> some View {
@@ -836,6 +861,7 @@ private struct MenuItemRow: View {
 }
 
 private struct MenuRowDragModifier: ViewModifier {
+    @EnvironmentObject private var model: AppModel
     let enabled: Bool
     let item: MenuBarItem
 
@@ -849,6 +875,7 @@ private struct MenuRowDragModifier: ViewModifier {
                 }
                 .padding(9)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: OpenNotchTheme.controlCornerRadius, style: .continuous))
+                .onAppear { model.draggedMenuItemID = item.id }
             }
         } else {
             content

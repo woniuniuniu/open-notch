@@ -21,6 +21,7 @@ final class AppModel: ObservableObject {
         didSet { refreshMenuItemSections() }
     }
     @Published var searchText = ""
+    @Published var draggedMenuItemID: String?
     @Published private(set) var externalDisplayConnected = false
     @Published private(set) var externalDisplayIsPrimary = false
     private var sectionDispositions = [String: ItemDisposition]()
@@ -301,21 +302,22 @@ final class AppModel: ObservableObject {
             placeAfterTarget: placeAfterTarget,
             liveOrder: physicalItems.map(\.semanticIdentifier)
         ) else {
-            if source.semanticBundleIdentifier == "com.apple.weather.menu"
-                || target.semanticBundleIdentifier == "com.apple.weather.menu" {
-                let result = MenuBarMoveEngine.reorder(
-                    source,
-                    adjacentTo: target,
-                    placeAfterTarget: placeAfterTarget
-                )
-                Diagnostics.shared.append("Weather direct reorder result=\(String(describing: result))")
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                    self?.refresh(reason: L("Manual reorder"), reconcile: false)
-                }
-                return
+            // Newly discovered AX-only items (including ChatGPT and FlClash)
+            // do not have a persisted MenuBarAgent slot yet. Reorder their
+            // real status-item geometry directly instead of rejecting them.
+            let result = MenuBarMoveEngine.reorder(
+                source,
+                adjacentTo: target,
+                placeAfterTarget: placeAfterTarget
+            )
+            Diagnostics.shared.append(
+                "AX-only direct reorder; source=\(source.id); target=\(target.id); " +
+                "result=\(String(describing: result))"
+            )
+            if result == .failed { addEvent(L("Could not reorder menu bar item")) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.refresh(reason: L("Manual reorder"), reconcile: false)
             }
-            Diagnostics.shared.append("MenuBarAgent reorder failed; source=\(source.id); target=\(target.id)")
-            addEvent(L("Could not reorder menu bar item"))
             return
         }
 
