@@ -74,6 +74,10 @@ enum MenuBarAgentBridge {
         return result.isEmpty ? nil : result
     }
 
+    static func preferredPosition(for key: String) -> Double? {
+        positions()?[key]
+    }
+
     /// Updates the preferred order without restarting MenuBarAgent. macOS 27
     /// treats these values as sortable slots. Reassigning existing slots is
     /// substantially more reliable than inventing fractional values between

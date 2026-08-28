@@ -105,7 +105,7 @@ final class AppModel: ObservableObject {
     var filteredVisibleItems: [MenuBarItem] {
         filteredItems.filter {
             sectionDisposition(for: $0) == .visible
-                && $0.frame.width > 1
+                && ($0.frame.width > 1 || $0.isOpenNotchControl)
         }
     }
 
@@ -238,7 +238,7 @@ final class AppModel: ObservableObject {
     func reorderMenuBarItem(sourceID: String, targetID: String) {
         let physicalItems = items.filter {
             disposition(for: $0) == .visible
-                && $0.frame.width > 1
+                && ($0.frame.width > 1 || $0.isOpenNotchControl)
         }.sorted { $0.frame.minX < $1.frame.minX }
         guard MenuBarAgentBridge.isAvailable,
               let sourceIndex = physicalItems.firstIndex(where: { $0.id == sourceID }),
@@ -255,12 +255,18 @@ final class AppModel: ObservableObject {
         // position dictionary. Command-drag it directly; AppKit persists the
         // resulting position through its autosave name.
         if source.isOpenNotchControl || target.isOpenNotchControl {
-            let result = MenuBarMoveEngine.reorder(
+            let moved: Bool
+            if source.isOpenNotchControl {
+                moved = statusBar?.moveToggle(adjacentTo: target, placeAfter: placeAfterTarget) ?? false
+            } else {
+                moved = statusBar?.moveToggle(adjacentTo: source, placeAfter: !placeAfterTarget) ?? false
+            }
+            let liveResult = MenuBarMoveEngine.reorder(
                 source,
                 adjacentTo: target,
                 placeAfterTarget: placeAfterTarget
             )
-            Diagnostics.shared.append("Open Notch menu item reorder result=\(String(describing: result))")
+            Diagnostics.shared.append("Open Notch menu item reorder saved=\(moved); live=\(String(describing: liveResult))")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 self?.refresh(reason: L("Manual reorder"), reconcile: false)
             }
@@ -314,7 +320,7 @@ final class AppModel: ObservableObject {
         let sortable = items.filter {
             !$0.isProtected
                 && disposition(for: $0) == .visible
-                && $0.frame.width > 1
+                && ($0.frame.width > 1 || $0.isOpenNotchControl)
         }.sorted { $0.frame.minX < $1.frame.minX }
         guard let index = sortable.firstIndex(where: { $0.id == id }) else { return }
         let targetIndex = index + offset
@@ -410,8 +416,8 @@ final class AppModel: ObservableObject {
                     return
                 }
                 var resolvedItems = scanned
-                if let toggle = self.statusBar?.toggleMenuBarItem,
-                   !resolvedItems.contains(where: { $0.isOpenNotchControl }) {
+                if let toggle = self.statusBar?.toggleMenuBarItem {
+                    resolvedItems.removeAll(where: { $0.isOpenNotchControl })
                     resolvedItems.append(toggle)
                 }
                 resolvedItems.sort { $0.frame.minX < $1.frame.minX }
@@ -420,7 +426,7 @@ final class AppModel: ObservableObject {
                     resolvedItems.map { ($0.windowID, $0) },
                     uniquingKeysWith: { current, _ in current }
                 )
-                if scanChanged {
+                if scanChanged || resolvedItems.contains(where: { $0.isOpenNotchControl }) {
                     self.items = resolvedItems.sorted { lhs, rhs in
                         // MenuBarAgent positions are the user's physical order.
                         // Preserve them on macOS 27 so drag sorting remains
@@ -433,6 +439,11 @@ final class AppModel: ObservableObject {
                 }
                 self.refreshMenuItemSections()
                 self.updateActualDispositions()
+                if let own = resolvedItems.first(where: { $0.isOpenNotchControl }) {
+                    Diagnostics.shared.append("Open Notch inventory item; frame=\(NSStringFromRect(own.frame)); protected=\(own.isProtected); disposition=\(self.disposition(for: own).rawValue)")
+                } else {
+                    Diagnostics.shared.append("Open Notch inventory item missing after status-item merge")
+                }
                 self.settings.remember(resolvedItems)
                 self.applyMenuBarAgentVisibility(reason: reason)
                 self.lastScanDate = .now

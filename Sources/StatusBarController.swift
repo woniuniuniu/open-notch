@@ -47,7 +47,8 @@ final class StatusBarController: NSObject {
 
     var toggleMenuBarItem: MenuBarItem? {
         let raw = rawWindow(for: toggleItem)
-        guard let frame = raw?.frame ?? statusItemFrame(for: toggleItem) else { return nil }
+        let detectedFrame = raw?.frame ?? statusItemFrame(for: toggleItem)
+        let frame = (detectedFrame?.width ?? 0) > 1 ? detectedFrame! : estimatedToggleFrame
         let bundleID = Bundle.main.bundleIdentifier ?? "com.openbartender.OpenNotch"
         let key = "status:\(bundleID)::OpenNotch.Toggle"
         return MenuBarItem(
@@ -58,6 +59,14 @@ final class StatusBarController: NSObject {
             displayName: Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Open Notch",
             symbolName: "menubar.rectangle", frame: frame, isProtected: false
         )
+    }
+
+    private var estimatedToggleFrame: CGRect {
+        let screen = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        // macOS 27 can remote-host an app's own NSStatusItem without exposing
+        // its window or AX frame. Keep it present in the sortable inventory;
+        // the live move path will replace this estimate as soon as AX resolves.
+        return CGRect(x: screen.maxX - 220, y: 0, width: 24, height: 24)
     }
 
     func setExpanded(_ expanded: Bool) {
@@ -104,6 +113,20 @@ final class StatusBarController: NSObject {
                 self.toggleItem.length = baseline
             }
         }
+    }
+
+    func moveToggle(adjacentTo item: MenuBarItem, placeAfter: Bool) -> Bool {
+        guard let target = MenuBarAgentBridge.preferredPosition(for: item.semanticIdentifier) else {
+            return false
+        }
+        let key = "NSStatusItem Preferred Position \(AutosaveName.toggle)"
+        UserDefaults.standard.set(target + (placeAfter ? 0.25 : -0.25), forKey: key)
+        // Reassigning the autosave name asks AppKit to consume the new slot
+        // without restarting MenuBarAgent or posting pointer events.
+        toggleItem.autosaveName = nil
+        toggleItem.autosaveName = AutosaveName.toggle
+        requestMenuBarPositionRefresh()
+        return true
     }
 
     func updateMenu(isExpanded: Bool, guardianEnabled: Bool, hasAccessibilityPermission: Bool) {

@@ -33,8 +33,7 @@ struct MenuBarItem: Identifiable, Equatable {
     }
 
     var isOpenNotchControl: Bool {
-        semanticBundleIdentifier == (Bundle.main.bundleIdentifier ?? "com.openbartender.OpenNotch")
-            && (semanticIdentifier.contains("OpenNotch.Toggle") || rawTitle.contains("OpenNotch.Toggle"))
+        semanticIdentifier.contains("OpenNotch.Toggle") || rawTitle.contains("OpenNotch.Toggle")
     }
 
     var isAnonymousControlCenterItem: Bool {

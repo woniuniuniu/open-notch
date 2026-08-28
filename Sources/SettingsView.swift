@@ -201,21 +201,23 @@ private struct SettingsQuickMenu: View {
 
 private struct WindowControlButtons: View {
     @State private var hovering = false
+    @State private var hostWindow: NSWindow?
 
     var body: some View {
         HStack(spacing: 7) {
             control(color: Color(red: 1, green: 0.37, blue: 0.34), symbol: "xmark") {
-                closeSettingsWindow()
+                hostWindow?.orderOut(nil)
             }
             control(color: Color(red: 1, green: 0.74, blue: 0.18), symbol: "minus") {
-                NSApp.keyWindow?.miniaturize(nil)
+                hostWindow?.miniaturize(nil)
             }
             control(color: Color(red: 0.20, green: 0.78, blue: 0.35), symbol: "arrow.up.left.and.arrow.down.right") {
-                NSApp.keyWindow?.zoom(nil)
+                hostWindow?.zoom(nil)
             }
         }
         .padding(.horizontal, 3)
         .onHover { hovering = $0 }
+        .background(WindowReader { hostWindow = $0 })
     }
 
     private func control(color: Color, symbol: String, action: @escaping () -> Void) -> some View {
@@ -234,11 +236,19 @@ private struct WindowControlButtons: View {
         .buttonStyle(.plain)
     }
 
-    private func closeSettingsWindow() {
-        let window = NSApp.keyWindow ?? NSApp.windows.first {
-            $0.identifier?.rawValue == "OpenNotch.Settings"
-        }
-        window?.orderOut(nil)
+}
+
+private struct WindowReader: NSViewRepresentable {
+    let onResolve: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async { onResolve(view.window) }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async { onResolve(view.window) }
     }
 }
 

@@ -76,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // corners. The app already supplies its own traffic lights and
                 // chrome, so a borderless resizable window lets one uniform
                 // four-corner mask define the entire settings window.
-                styleMask: [.borderless, .resizable],
+                styleMask: [.borderless, .closable, .miniaturizable, .resizable],
                 backing: .buffered,
                 defer: false
             )
