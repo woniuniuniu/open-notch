@@ -92,7 +92,7 @@ cd open-notch
 ./build.sh
 ```
 
-The script creates `build/Open Notch.app` and `build/Open Notch.zip`. Move the app to `/Applications`, launch it, grant Accessibility access in System Settings, and click **Recheck** on the General page.
+The script creates `build/Open Notch.app`, `build/Open Notch.zip`, and a friend-shareable `build/Open Notch 0.7.2.dmg`. Move the app to `/Applications`, launch it, grant Accessibility access in System Settings, and click **Recheck** on the General page.
 
 The local build is ad-hoc signed for development and personal testing. Distribution to other users requires your own Developer ID signature and Apple notarization.
 

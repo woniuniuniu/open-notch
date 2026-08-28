@@ -92,7 +92,7 @@ cd open-notch
 ./build.sh
 ```
 
-脚本会生成 `build/Open Notch.app` 和 `build/Open Notch.zip`。将 App 移到 `/Applications` 后启动，在系统设置中授予辅助功能权限，再回到 Open Notch 的 General / 通用页面点击 **Recheck / 重新检查**。
+脚本会生成 `build/Open Notch.app`、`build/Open Notch.zip` 和可直接转发给朋友的 `build/Open Notch 0.7.2.dmg`。将 App 移到 `/Applications` 后启动，在系统设置中授予辅助功能权限，再回到 Open Notch 的 General / 通用页面点击 **Recheck / 重新检查**。
 
 本地构建使用 ad-hoc 签名，仅适合开发和个人测试。面向其他用户分发时，需要使用自己的 Developer ID 签名并完成 Apple notarization。
 
