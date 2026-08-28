@@ -131,7 +131,7 @@ final class AppModel: ObservableObject {
         filteredItems.filter {
             sectionDisposition(for: $0) == .visible
                 && ($0.frame.width > 1 || $0.isOpenNotchControl)
-        }
+        }.sorted { $0.frame.minX < $1.frame.minX }
     }
 
     var filteredHiddenItems: [MenuBarItem] {
@@ -289,12 +289,7 @@ final class AppModel: ObservableObject {
             } else {
                 moved = statusBar?.moveToggle(adjacentTo: source, placeAfter: !placeAfterTarget) ?? false
             }
-            let liveResult = MenuBarMoveEngine.reorder(
-                source,
-                adjacentTo: target,
-                placeAfterTarget: placeAfterTarget
-            )
-            Diagnostics.shared.append("Open Notch menu item reorder saved=\(moved); live=\(String(describing: liveResult))")
+            Diagnostics.shared.append("Open Notch menu item reorder saved=\(moved); inputSynthesis=false")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 self?.refresh(reason: L("Manual reorder"), reconcile: false)
             }
@@ -811,10 +806,22 @@ final class AppModel: ObservableObject {
                     self.applyMenuBarAgentVisibility(reason: L("Hidden shelf activation finished"))
                 }
             }
-            let activationSucceeded = pressed
+            var launchedApplication = false
+            if !pressed {
+                launchedApplication = await MainActor.run {
+                    guard let url = NSWorkspace.shared.urlForApplication(
+                        withBundleIdentifier: item.semanticBundleIdentifier
+                    ) else { return false }
+                    return NSWorkspace.shared.open(url)
+                }
+            }
+            let axPressed = pressed
+            let appLaunched = launchedApplication
+            let activationSucceeded = axPressed || appLaunched
             await MainActor.run {
                 Diagnostics.shared.append(
-                    "Hidden shelf activation; item=\(item.displayName); id=\(item.id); AXPress=\(activationSucceeded)"
+                    "Hidden shelf activation; item=\(item.displayName); id=\(item.id); " +
+                    "AXPress=\(axPressed); appLaunch=\(appLaunched)"
                 )
                 if !activationSucceeded {
                     self.addEvent(LF("Could not activate menu bar item: %@", item.displayName))
@@ -1046,7 +1053,7 @@ final class AppModel: ObservableObject {
         // New macOS releases add system menu extras (for example Weather)
         // with IDs outside the original 0...8 range. Allow future system IDs
         // by default and remove only the known item the user explicitly hid.
-        var allowedSystemItems = Set(0...64)
+        var allowedSystemItems = Set(0...1024)
         let systemItemIDs: [String: Int] = [
             "Battery": 0, "Bluetooth": 1, "Clock": 2, "Display": 3,
             "Keyboard": 4, "Sound": 5, "WiFi": 6,
@@ -1071,6 +1078,10 @@ final class AppModel: ObservableObject {
                 : nil
         })
         if settings.oneDriveGuardianEnabled { allowed.insert("com.microsoft.OneDrive") }
+        // Weather is hosted by a separate system process and is not always
+        // returned by MenuBarAgent enumeration. Keep it allowed so the user's
+        // Control Center setting remains authoritative.
+        allowed.insert("com.apple.weather.menu")
         if let ownBundleID = Bundle.main.bundleIdentifier { allowed.insert(ownBundleID) }
         menuBarAgentVisibility.apply(
             allowedSystemItems: allowedSystemItems,

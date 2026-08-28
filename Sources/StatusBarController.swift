@@ -10,7 +10,7 @@ final class StatusBarController: NSObject {
         static let boundary = "OpenNotch.HiddenBoundary"
     }
 
-    private let toggleItem: NSStatusItem
+    private var toggleItem: NSStatusItem
     private let boundaryItem: NSStatusItem
     private var boundaryWidthConstraint: NSLayoutConstraint?
     private var menu: NSMenu?
@@ -135,11 +135,12 @@ final class StatusBarController: NSObject {
         }
         let key = "NSStatusItem Preferred Position \(AutosaveName.toggle)"
         UserDefaults.standard.set(target + (placeAfter ? 0.25 : -0.25), forKey: key)
-        // Reassigning the autosave name asks AppKit to consume the new slot
-        // without restarting MenuBarAgent or posting pointer events.
-        toggleItem.autosaveName = nil
+        // Recreate only our own AppKit item so the new autosaved slot is
+        // consumed without synthesizing Command-drag or keyboard events.
+        NSStatusBar.system.removeStatusItem(toggleItem)
+        toggleItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         toggleItem.autosaveName = AutosaveName.toggle
-        requestMenuBarPositionRefresh()
+        configureToggle()
         return true
     }
 

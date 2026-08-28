@@ -23,7 +23,7 @@ final class SettingsStore: ObservableObject {
         static let hiddenItemPositions = "hiddenItemPositions.v1"
         static let restoredSystemItemVisibility = "restoredSystemItemVisibility.v2"
         static let externalDisplayMode = "externalDisplayMode.v1"
-        static let restoredWeatherVisibility = "restoredWeatherVisibility.v1"
+        static let restoredWeatherVisibility = "restoredWeatherVisibility.v2"
     }
 
     @Published var policies: [String: ItemDisposition] {
@@ -179,7 +179,7 @@ final class SettingsStore: ObservableObject {
         if !defaults.bool(forKey: Key.restoredWeatherVisibility) {
             CFPreferencesSetValue(
                 "Weather" as CFString,
-                NSNumber(value: 8),
+                NSNumber(value: 2),
                 "com.apple.controlcenter" as CFString,
                 kCFPreferencesCurrentUser,
                 kCFPreferencesCurrentHost

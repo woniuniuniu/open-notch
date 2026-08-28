@@ -95,7 +95,6 @@ struct GuardianEvent: Identifiable, Equatable {
 }
 
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case overview
     case menuItems
     case oneDrive
     case general
@@ -105,7 +104,6 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .overview: L("Overview")
         case .menuItems: L("Menu Bar Items")
         case .oneDrive: "OneDrive"
         case .general: L("General")
@@ -115,7 +113,6 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 
     var symbolName: String {
         switch self {
-        case .overview: "rectangle.topthird.inset.filled"
         case .menuItems: "menubar.rectangle"
         case .oneDrive: "cloud.fill"
         case .general: "gearshape"

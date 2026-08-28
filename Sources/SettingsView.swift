@@ -60,15 +60,14 @@ struct SettingsRootView: View {
     @ViewBuilder
     private var detail: some View {
         Group {
-            switch model.selectedPane ?? .overview {
-            case .overview: OverviewPane()
+            switch model.selectedPane ?? .menuItems {
             case .menuItems: MenuItemsPane()
             case .oneDrive: OneDrivePane()
             case .general: GeneralPane()
             case .about: AboutPane()
             }
         }
-        .id(model.selectedPane ?? .overview)
+        .id(model.selectedPane ?? .menuItems)
         .transition(
             reduceMotion
                 ? .opacity
@@ -137,7 +136,6 @@ private struct SettingsQuickMenu: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             menuButton(L("Menu Bar Items"), icon: "menubar.rectangle", pane: .menuItems)
-            menuButton(L("Overview"), icon: "rectangle.topthird.inset.filled", pane: .overview)
             menuButton(L("OneDrive"), icon: "cloud.fill", pane: .oneDrive)
             menuButton(L("General"), icon: "slider.horizontal.3", pane: .general)
             menuButton(L("About"), icon: "info.circle", pane: .about)
@@ -591,80 +589,6 @@ private struct PermissionBanner: View {
     }
 }
 
-private struct OverviewPane: View {
-    @EnvironmentObject private var model: AppModel
-    @ObservedObject private var settings = SettingsStore.shared
-
-    var body: some View {
-        PageScaffold(title: L("Overview"), subtitle: L("Menu bar at a glance")) {
-            if !model.canManageMenuBar {
-                PermissionBanner()
-            }
-
-            HStack(alignment: .center, spacing: 22) {
-                StatusGauge(visible: model.visibleItems.count, hidden: model.hiddenItems.count)
-
-                VStack(spacing: 4) {
-                    MetricLine(color: OpenNotchTheme.yellow, title: L("Keep Visible"), value: "\(model.visibleItems.count)")
-                    MetricLine(color: OpenNotchTheme.magenta, title: L("Set to Hidden"), value: "\(model.hiddenItems.count)")
-                    MetricLine(
-                        color: OpenNotchTheme.cyan,
-                        title: L("Current Status"),
-                        value: settings.isExpanded ? L("Expanded") : L("Collapsed")
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
-
-            GlassPanel(title: L("Menu Bar"), systemImage: "menubar.rectangle", accent: OpenNotchTheme.cyan) {
-                SettingsLine(
-                    L("Hidden Section"),
-                    subtitle: settings.isExpanded ? L("Hidden section expanded") : L("Hidden section collapsed"),
-                    systemImage: settings.isExpanded ? "eye" : "eye.slash",
-                    tint: OpenNotchTheme.cyan
-                ) {
-                    Button(settings.isExpanded ? L("Collapse") : L("Expand")) {
-                        model.toggleExpanded()
-                    }
-                    .systemGlassButton(prominent: true)
-                }
-            }
-
-            GlassPanel(title: "OneDrive", systemImage: "cloud.fill", accent: OpenNotchTheme.magenta) {
-                SettingsLine(
-                    model.oneDriveItem == nil ? L("OneDrive item not found") : L("OneDrive pinned"),
-                    subtitle: settings.oneDriveGuardianEnabled ? L("Keep OneDrive pinned") : L("Off"),
-                    systemImage: model.oneDriveItem == nil ? "cloud.slash" : "checkmark.shield.fill",
-                    tint: model.oneDriveItem == nil ? OpenNotchTheme.yellow : OpenNotchTheme.green
-                ) {
-                    Button(L("Reset Now")) { model.repairOneDriveNow() }
-                        .systemGlassButton()
-                        .disabled(model.oneDriveItem == nil || !model.canManageMenuBar)
-                }
-            }
-
-            if let event = model.guardianEvents.first {
-                GlassPanel(title: L("Recent Activity"), systemImage: "bolt.fill", accent: OpenNotchTheme.yellow) {
-                    HStack(spacing: 10) {
-                        Circle()
-                            .fill(OpenNotchTheme.yellow)
-                            .frame(width: 7, height: 7)
-                        Text(event.message)
-                            .font(.caption)
-                            .lineLimit(2)
-                        Spacer()
-                        Text(event.date, style: .time)
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-    }
-}
-
 private struct MenuItemsPane: View {
     @EnvironmentObject private var model: AppModel
 
@@ -735,7 +659,7 @@ private struct MenuItemsPane: View {
                             accent: OpenNotchTheme.cyan
                         ) {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text(L("Drag the handle to reorder visible menu bar items."))
+                                Text(L("The top item is the leftmost menu bar icon. Drag anywhere on a row to reorder."))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                 LazyVStack(spacing: 0) {

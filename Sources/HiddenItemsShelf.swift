@@ -31,11 +31,8 @@ struct HiddenItemsShelfView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(.white.opacity(0.20), lineWidth: 1)
-        }
+        .background(.regularMaterial, in: Capsule())
+        .overlay { Capsule().stroke(.white.opacity(0.20), lineWidth: 1) }
         .shadow(color: .black.opacity(0.24), radius: 16, y: 6)
     }
 }
