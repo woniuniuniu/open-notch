@@ -155,10 +155,28 @@ enum MenuBarAgentBridge {
         guard current[sourceKey] != nil, current[targetKey] != nil else { return false }
         // Change only the dragged item. Reassigning every visible item's slot
         // mixes unrelated MenuBarAgent number ranges and can scramble the
-        // entire bar. AppKit itself uses a small fractional offset to express
-        // adjacency, which also leaves every other icon untouched.
+        // entire bar. Pick a free value between the target and its nearest
+        // neighbour; a fixed +/-0.25 can collide with an existing item and be
+        // normalized straight back to the old order.
         guard let targetPosition = current[targetKey] else { return false }
-        current[sourceKey] = targetPosition + (placeAfterTarget ? 0.25 : -0.25)
+        let occupied = current
+            .filter { $0.key != sourceKey && $0.key != targetKey }
+            .map(\.value)
+        let adjacentPosition: Double?
+        if placeAfterTarget {
+            adjacentPosition = occupied.filter { $0 > targetPosition }.min()
+        } else {
+            adjacentPosition = occupied.filter { $0 < targetPosition }.max()
+        }
+        let direction = placeAfterTarget ? 1.0 : -1.0
+        let candidate: Double
+        if let adjacentPosition,
+           abs(adjacentPosition - targetPosition) <= 1 {
+            candidate = (targetPosition + adjacentPosition) / 2
+        } else {
+            candidate = targetPosition + direction * 0.25
+        }
+        current[sourceKey] = candidate
         CFPreferencesSetValue(
             positionsKey as CFString,
             current as CFDictionary,

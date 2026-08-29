@@ -37,6 +37,7 @@ final class AppModel: ObservableObject {
     private var isStopping = false
     private var isMoving = false
     private var isReordering = false
+    private var reorderRetryDeadline: Date?
     private var menuItemDragGeneration = 0
     private var menuItemRowFrames = [String: CGRect]()
     private var pendingRefresh: (reason: String, reconcile: Bool)?
@@ -304,6 +305,7 @@ final class AppModel: ObservableObject {
         )
         objectWillChange.send()
         isReordering = true
+        reorderRetryDeadline = nil
 
         // Our AppKit status item does not appear in MenuBarAgent's persisted
         // position dictionary. Command-drag it directly; AppKit persists the
@@ -319,6 +321,7 @@ final class AppModel: ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 self?.visualMenuItemOrder = nil
                 self?.isReordering = false
+                self?.reorderRetryDeadline = nil
                 self?.refresh(reason: L("Manual reorder"), reconcile: false)
             }
             return
@@ -339,6 +342,7 @@ final class AppModel: ObservableObject {
             addEvent(L("Could not reorder menu bar item"))
             visualMenuItemOrder = nil
             isReordering = false
+            reorderRetryDeadline = nil
             return
         }
 
@@ -354,8 +358,13 @@ final class AppModel: ObservableObject {
             guard let liveSource = live.first(where: { $0.id == source.id }),
                   let liveTarget = live.first(where: { $0.id == target.id })
             else {
-                self.visualMenuItemOrder = nil
-                self.isReordering = false
+                self.reorderRetryDeadline = Date.now.addingTimeInterval(10)
+                self.attemptShieldedReorder(
+                    sourceID: source.id,
+                    targetID: target.id,
+                    placeAfterTarget: placeAfterTarget,
+                    attempt: 0
+                )
                 return
             }
             let applied = placeAfterTarget
@@ -366,12 +375,14 @@ final class AppModel: ObservableObject {
                 self.visualMenuItemOrder = nil
                 Diagnostics.shared.append("Menu bar reorder verified from live AX geometry")
                 self.isReordering = false
+                self.reorderRetryDeadline = nil
                 return
             }
             Diagnostics.shared.append(
                 "Menu bar reorder persisted but live layout did not update; " +
                 "source=\(source.id); target=\(target.id); inputSynthesis=false"
             )
+            self.reorderRetryDeadline = Date.now.addingTimeInterval(10)
             self.attemptShieldedReorder(
                 sourceID: source.id,
                 targetID: target.id,
@@ -388,6 +399,10 @@ final class AppModel: ObservableObject {
         attempt: Int
     ) {
         guard isReordering else { return }
+        guard reorderRetryDeadline.map({ Date.now < $0 }) ?? false else {
+            finishFailedShieldedReorder(sourceID: sourceID, targetID: targetID)
+            return
+        }
         let live = MenuBarAgentBridge.items()
         guard let liveSource = live.first(where: { $0.id == sourceID }),
               let liveTarget = live.first(where: { $0.id == targetID })
@@ -396,7 +411,7 @@ final class AppModel: ObservableObject {
                 sourceID: sourceID,
                 targetID: targetID,
                 placeAfterTarget: placeAfterTarget,
-                attempt: attempt + 1,
+                attempt: attempt,
                 delay: 0.35
             )
             return
@@ -409,13 +424,14 @@ final class AppModel: ObservableObject {
             items = live
             visualMenuItemOrder = nil
             isReordering = false
+            reorderRetryDeadline = nil
             Diagnostics.shared.append(
                 "Menu bar reorder verified after shielded attempt; attempts=\(attempt)"
             )
             return
         }
 
-        guard attempt < 5 else {
+        guard attempt < 6 else {
             finishFailedShieldedReorder(sourceID: sourceID, targetID: targetID)
             return
         }
@@ -429,16 +445,23 @@ final class AppModel: ObservableObject {
             "attempt=\(attempt + 1); result=\(String(describing: result)); foregroundDelivery=false"
         )
         let delay: TimeInterval
+        let nextAttempt: Int
         switch result {
-        case .moved: delay = 0.4
-        case .deferredForUserInput: delay = 0.5
-        case .failed: delay = 0.35
+        case .moved:
+            delay = 0.4
+            nextAttempt = attempt + 1
+        case .deferredForUserInput:
+            delay = 0.5
+            nextAttempt = attempt
+        case .failed:
+            delay = 0.35
+            nextAttempt = attempt + 1
         }
         scheduleShieldedReorderRetry(
             sourceID: sourceID,
             targetID: targetID,
             placeAfterTarget: placeAfterTarget,
-            attempt: attempt + 1,
+            attempt: nextAttempt,
             delay: delay
         )
     }
@@ -450,7 +473,7 @@ final class AppModel: ObservableObject {
         attempt: Int,
         delay: TimeInterval
     ) {
-        guard attempt <= 5 else {
+        guard attempt <= 6 else {
             finishFailedShieldedReorder(sourceID: sourceID, targetID: targetID)
             return
         }
@@ -471,6 +494,7 @@ final class AppModel: ObservableObject {
         addEvent(L("Could not reorder menu bar item"))
         visualMenuItemOrder = nil
         isReordering = false
+        reorderRetryDeadline = nil
         objectWillChange.send()
         refresh(reason: L("Manual reorder"), reconcile: false)
     }

@@ -241,9 +241,14 @@ enum MenuBarMoveEngine {
         defer { cursorShield.setSyntheticGestureInProgress(false) }
 
         let start = CGPoint(x: item.frame.midX, y: item.frame.midY)
-        let inset = max(4, target.frame.width * 0.25)
+        // Cross the target edge instead of releasing inside its bounds. Some
+        // status-item hosts do not commit a swap until the pointer reaches the
+        // actual gap on the requested side of the target.
+        let edgeOvershoot = min(7, max(4, item.frame.width * 0.15))
         let end = CGPoint(
-            x: placeAfterTarget ? target.frame.maxX - inset : target.frame.minX + inset,
+            x: placeAfterTarget
+                ? target.frame.maxX + edgeOvershoot
+                : target.frame.minX - edgeOvershoot,
             y: target.frame.midY
         )
         guard let moved = reorderEvent(.mouseMoved, at: start, item: item, source: source, token: eventShield.token),
