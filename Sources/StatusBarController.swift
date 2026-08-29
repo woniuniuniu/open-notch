@@ -300,7 +300,13 @@ final class StatusBarController: NSObject {
         panel.becomesKeyOnlyIfNeeded = true
         panel.isFloatingPanel = true
         panel.isMovable = false
-        panel.contentView = NSHostingView(rootView: content)
+        let hostingView = NSHostingView(rootView: content)
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        hostingView.layer?.cornerRadius = size.height / 2
+        hostingView.layer?.cornerCurve = .continuous
+        hostingView.layer?.masksToBounds = true
+        panel.contentView = hostingView
         return panel
     }
 
@@ -321,11 +327,12 @@ final class StatusBarController: NSObject {
         shelfIsVisible = false
         removeOutsideClickMonitors()
         let panels = [shelfPanel, morePanel].compactMap { $0 }
-        let finish = { [weak self] in
-            panels.forEach { $0.orderOut(nil) }
-            self?.shelfPanel = nil
-            self?.morePanel = nil
-        }
+        // Detach these exact panels immediately. If the user opens the shelf
+        // again before this animation ends, the old completion must not clear
+        // the newly created panel references.
+        shelfPanel = nil
+        morePanel = nil
+        let finish = { panels.forEach { $0.orderOut(nil) } }
         guard animated else { finish(); return }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.16
@@ -364,15 +371,26 @@ final class StatusBarController: NSObject {
         removeOutsideClickMonitors()
         localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
             [weak self] event in
+            if event.window === self?.toggleItem.button?.window {
+                return event
+            }
             self?.dismissShelfIfNeeded(at: NSEvent.mouseLocation)
             return event
         }
         globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
-            [weak self] _ in self?.dismissShelfIfNeeded(at: NSEvent.mouseLocation)
+            [weak self] _ in
+            let point = NSEvent.mouseLocation
+            DispatchQueue.main.async { self?.dismissShelfIfNeeded(at: point) }
         }
     }
 
     private func dismissShelfIfNeeded(at point: NSPoint) {
+        // A status-item click is handled on mouse-up by
+        // toggleShelfFromStatusItem. Treating its mouse-down as an outside
+        // click closes and immediately reopens the shelf.
+        if statusItemScreenFrame()?.insetBy(dx: -4, dy: -4).contains(point) == true {
+            return
+        }
         let isInside = [shelfPanel, morePanel].compactMap { $0 }.contains { $0.frame.contains(point) }
         if !isInside { hideShelf() }
     }
