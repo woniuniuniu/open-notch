@@ -37,6 +37,7 @@ final class AppModel: ObservableObject {
     private var isStopping = false
     private var isMoving = false
     private var isReordering = false
+    private var reorderGeneration: UInt64 = 0
     private var reorderRetryDeadline: Date?
     private var menuItemDragGeneration = 0
     private var menuItemRowFrames = [String: CGRect]()
@@ -277,10 +278,6 @@ final class AppModel: ObservableObject {
         targetID: String,
         placeAfterTarget requestedPlacement: Bool? = nil
     ) {
-        guard !isReordering else {
-            Diagnostics.shared.append("Menu bar reorder ignored while another reorder is pending")
-            return
-        }
         let physicalItems = items.filter {
             disposition(for: $0) == .visible
                 && ($0.frame.width > 1 || $0.isOpenNotchControl)
@@ -300,6 +297,8 @@ final class AppModel: ObservableObject {
         guard let adjustedTargetIndex = proposedOrder.firstIndex(of: targetID) else { return }
         proposedOrder.insert(sourceID, at: adjustedTargetIndex + (placeAfterTarget ? 1 : 0))
         guard proposedOrder != physicalItems.map(\.id) else { return }
+        reorderGeneration &+= 1
+        let generation = reorderGeneration
         visualMenuItemOrder = Dictionary(
             uniqueKeysWithValues: proposedOrder.enumerated().map { ($0.element, $0.offset) }
         )
@@ -319,10 +318,11 @@ final class AppModel: ObservableObject {
             }
             Diagnostics.shared.append("Open Notch menu item reorder saved=\(moved); inputSynthesis=false")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.visualMenuItemOrder = nil
-                self?.isReordering = false
-                self?.reorderRetryDeadline = nil
-                self?.refresh(reason: L("Manual reorder"), reconcile: false)
+                guard let self, self.reorderGeneration == generation else { return }
+                self.visualMenuItemOrder = nil
+                self.isReordering = false
+                self.reorderRetryDeadline = nil
+                self.refresh(reason: L("Manual reorder"), reconcile: false)
             }
             return
         }
@@ -353,7 +353,7 @@ final class AppModel: ObservableObject {
         // modifier events: those can reach the foreground application and
         // trigger app switching, window closing, or unrelated menu actions.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak self] in
-            guard let self else { return }
+            guard let self, self.reorderGeneration == generation else { return }
             let live = MenuBarAgentBridge.items()
             guard let liveSource = live.first(where: { $0.id == source.id }),
                   let liveTarget = live.first(where: { $0.id == target.id })
@@ -363,7 +363,8 @@ final class AppModel: ObservableObject {
                     sourceID: source.id,
                     targetID: target.id,
                     placeAfterTarget: placeAfterTarget,
-                    attempt: 0
+                    attempt: 0,
+                    generation: generation
                 )
                 return
             }
@@ -387,7 +388,8 @@ final class AppModel: ObservableObject {
                 sourceID: source.id,
                 targetID: target.id,
                 placeAfterTarget: placeAfterTarget,
-                attempt: 0
+                attempt: 0,
+                generation: generation
             )
         }
     }
@@ -396,11 +398,12 @@ final class AppModel: ObservableObject {
         sourceID: String,
         targetID: String,
         placeAfterTarget: Bool,
-        attempt: Int
+        attempt: Int,
+        generation: UInt64
     ) {
-        guard isReordering else { return }
+        guard isReordering, reorderGeneration == generation else { return }
         guard reorderRetryDeadline.map({ Date.now < $0 }) ?? false else {
-            finishFailedShieldedReorder(sourceID: sourceID, targetID: targetID)
+            finishFailedShieldedReorder(sourceID: sourceID, targetID: targetID, generation: generation)
             return
         }
         let live = MenuBarAgentBridge.items()
@@ -412,7 +415,8 @@ final class AppModel: ObservableObject {
                 targetID: targetID,
                 placeAfterTarget: placeAfterTarget,
                 attempt: attempt,
-                delay: 0.35
+                delay: 0.35,
+                generation: generation
             )
             return
         }
@@ -432,7 +436,7 @@ final class AppModel: ObservableObject {
         }
 
         guard attempt < 6 else {
-            finishFailedShieldedReorder(sourceID: sourceID, targetID: targetID)
+            finishFailedShieldedReorder(sourceID: sourceID, targetID: targetID, generation: generation)
             return
         }
         let result = MenuBarMoveEngine.reorderShielded(
@@ -462,7 +466,8 @@ final class AppModel: ObservableObject {
             targetID: targetID,
             placeAfterTarget: placeAfterTarget,
             attempt: nextAttempt,
-            delay: delay
+            delay: delay,
+            generation: generation
         )
     }
 
@@ -471,23 +476,31 @@ final class AppModel: ObservableObject {
         targetID: String,
         placeAfterTarget: Bool,
         attempt: Int,
-        delay: TimeInterval
+        delay: TimeInterval,
+        generation: UInt64
     ) {
         guard attempt <= 6 else {
-            finishFailedShieldedReorder(sourceID: sourceID, targetID: targetID)
+            finishFailedShieldedReorder(sourceID: sourceID, targetID: targetID, generation: generation)
             return
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            self?.attemptShieldedReorder(
+            guard let self, self.reorderGeneration == generation else { return }
+            self.attemptShieldedReorder(
                 sourceID: sourceID,
                 targetID: targetID,
                 placeAfterTarget: placeAfterTarget,
-                attempt: attempt
+                attempt: attempt,
+                generation: generation
             )
         }
     }
 
-    private func finishFailedShieldedReorder(sourceID: String, targetID: String) {
+    private func finishFailedShieldedReorder(
+        sourceID: String,
+        targetID: String,
+        generation: UInt64
+    ) {
+        guard reorderGeneration == generation else { return }
         Diagnostics.shared.append(
             "WindowServer shielded reorder exhausted retries; source=\(sourceID); target=\(targetID)"
         )
@@ -500,6 +513,15 @@ final class AppModel: ObservableObject {
     }
 
     func beginMenuItemDrag(_ id: String) {
+        if isReordering {
+            reorderGeneration &+= 1
+            isReordering = false
+            reorderRetryDeadline = nil
+            visualMenuItemOrder = nil
+            Diagnostics.shared.append(
+                "Pending menu bar reorder superseded by a new drag; source=\(id)"
+            )
+        }
         menuItemDragGeneration += 1
         let generation = menuItemDragGeneration
         draggedMenuItemID = id
