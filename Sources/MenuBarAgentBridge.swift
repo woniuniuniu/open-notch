@@ -130,6 +130,25 @@ enum MenuBarAgentBridge {
         positions()?[key]
     }
 
+    static func insertionPosition(
+        adjacentTo targetKey: String,
+        placeAfterTarget: Bool,
+        excluding excludedKey: String? = nil
+    ) -> Double? {
+        guard let current = positions(), let targetPosition = current[targetKey] else { return nil }
+        let occupied = current.filter {
+            $0.key != targetKey && $0.key != excludedKey
+        }.map(\.value)
+        let adjacentPosition = placeAfterTarget
+            ? occupied.filter { $0 > targetPosition }.min()
+            : occupied.filter { $0 < targetPosition }.max()
+        let direction = placeAfterTarget ? 1.0 : -1.0
+        if let adjacentPosition, abs(adjacentPosition - targetPosition) <= 1 {
+            return (targetPosition + adjacentPosition) / 2
+        }
+        return targetPosition + direction * 0.25
+    }
+
     /// Updates the preferred order without restarting MenuBarAgent. macOS 27
     /// treats these values as sortable slots. Reassigning existing slots is
     /// substantially more reliable than inventing fractional values between
@@ -158,24 +177,11 @@ enum MenuBarAgentBridge {
         // entire bar. Pick a free value between the target and its nearest
         // neighbour; a fixed +/-0.25 can collide with an existing item and be
         // normalized straight back to the old order.
-        guard let targetPosition = current[targetKey] else { return false }
-        let occupied = current
-            .filter { $0.key != sourceKey && $0.key != targetKey }
-            .map(\.value)
-        let adjacentPosition: Double?
-        if placeAfterTarget {
-            adjacentPosition = occupied.filter { $0 > targetPosition }.min()
-        } else {
-            adjacentPosition = occupied.filter { $0 < targetPosition }.max()
-        }
-        let direction = placeAfterTarget ? 1.0 : -1.0
-        let candidate: Double
-        if let adjacentPosition,
-           abs(adjacentPosition - targetPosition) <= 1 {
-            candidate = (targetPosition + adjacentPosition) / 2
-        } else {
-            candidate = targetPosition + direction * 0.25
-        }
+        guard let candidate = insertionPosition(
+            adjacentTo: targetKey,
+            placeAfterTarget: placeAfterTarget,
+            excluding: sourceKey
+        ) else { return false }
         current[sourceKey] = candidate
         CFPreferencesSetValue(
             positionsKey as CFString,

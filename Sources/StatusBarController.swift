@@ -130,17 +130,24 @@ final class StatusBarController: NSObject {
     }
 
     func moveToggle(adjacentTo item: MenuBarItem, placeAfter: Bool) -> Bool {
-        guard let target = MenuBarAgentBridge.preferredPosition(for: item.semanticIdentifier) else {
+        guard let target = MenuBarAgentBridge.insertionPosition(
+            adjacentTo: item.semanticIdentifier,
+            placeAfterTarget: placeAfter
+        ) else {
             return false
         }
         let key = "NSStatusItem Preferred Position \(AutosaveName.toggle)"
-        UserDefaults.standard.set(target + (placeAfter ? 0.25 : -0.25), forKey: key)
         // Recreate only our own AppKit item so the new autosaved slot is
         // consumed without synthesizing Command-drag or keyboard events.
+        // Removing an autosaved status item deletes its preferred-position
+        // key, so the new value must be written after removal, not before it.
         NSStatusBar.system.removeStatusItem(toggleItem)
+        UserDefaults.standard.set(target, forKey: key)
+        guard UserDefaults.standard.synchronize() else { return false }
         toggleItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         toggleItem.autosaveName = AutosaveName.toggle
         configureToggle()
+        Diagnostics.shared.append("Open Notch preferred position recreated; position=\(target)")
         return true
     }
 
