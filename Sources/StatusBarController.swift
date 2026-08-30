@@ -130,13 +130,26 @@ final class StatusBarController: NSObject {
     }
 
     func moveToggle(adjacentTo item: MenuBarItem, placeAfter: Bool) -> Bool {
-        guard let target = MenuBarAgentBridge.insertionPosition(
-            adjacentTo: item.semanticIdentifier,
-            placeAfterTarget: placeAfter
-        ) else {
-            return false
-        }
         let key = "NSStatusItem Preferred Position \(AutosaveName.toggle)"
+        guard let currentItem = toggleMenuBarItem,
+              currentItem.frame.width > 1,
+              item.frame.width > 1
+        else { return false }
+
+        // NSStatusItem positions are distances from the display's trailing
+        // edge (larger values move left). MenuBarAgent slots are a different
+        // coordinate system and can even be negative, so never copy them into
+        // an AppKit autosave key. Calibrate from our current real frame and
+        // move by the exact screen-space delta needed to sit beside the target.
+        let storedPosition = (UserDefaults.standard.object(forKey: key) as? NSNumber)?.doubleValue
+        let screen = NSScreen.screens.first(where: { $0.frame.intersects(currentItem.frame) })
+            ?? NSScreen.main
+        let fallbackPosition = Double((screen?.frame.maxX ?? 0) - currentItem.frame.midX)
+        let currentPosition = storedPosition ?? fallbackPosition
+        let desiredMinX = placeAfter
+            ? item.frame.maxX
+            : item.frame.minX - currentItem.frame.width
+        let target = max(0, currentPosition + Double(currentItem.frame.minX - desiredMinX))
         // Recreate only our own AppKit item so the new autosaved slot is
         // consumed without synthesizing Command-drag or keyboard events.
         // Removing an autosaved status item deletes its preferred-position
@@ -153,7 +166,9 @@ final class StatusBarController: NSObject {
         let persisted = UserDefaults.standard.object(forKey: key) as? NSNumber
         Diagnostics.shared.append(
             "Open Notch preferred position recreated; requested=\(target); " +
-            "persisted=\(persisted?.doubleValue.description ?? "missing"); synchronized=\(synchronized)"
+            "persisted=\(persisted?.doubleValue.description ?? "missing"); synchronized=\(synchronized); " +
+            "sourceFrame=\(NSStringFromRect(currentItem.frame)); targetFrame=\(NSStringFromRect(item.frame)); " +
+            "after=\(placeAfter)"
         )
         return persisted != nil
     }
