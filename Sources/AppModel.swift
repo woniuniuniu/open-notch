@@ -290,6 +290,9 @@ final class AppModel: ObservableObject {
 
         let source = physicalItems[sourceIndex]
         let target = physicalItems[targetIndex]
+        let originalPreferredPosition = MenuBarAgentBridge.preferredPosition(
+            for: source.semanticIdentifier
+        )
         guard !source.isProtected, !target.isProtected else { return }
         let placeAfterTarget = requestedPlacement ?? (sourceIndex < targetIndex)
         var proposedOrder = physicalItems.map(\.id)
@@ -358,13 +361,18 @@ final class AppModel: ObservableObject {
             guard let liveSource = live.first(where: { $0.id == source.id }),
                   let liveTarget = live.first(where: { $0.id == target.id })
             else {
+                _ = MenuBarAgentBridge.restorePosition(
+                    originalPreferredPosition,
+                    for: source.semanticIdentifier
+                )
                 self.reorderRetryDeadline = Date.now.addingTimeInterval(10)
                 self.attemptShieldedReorder(
                     sourceID: source.id,
                     targetID: target.id,
                     placeAfterTarget: placeAfterTarget,
                     attempt: 0,
-                    generation: generation
+                    generation: generation,
+                    physicalMovePerformed: false
                 )
                 return
             }
@@ -383,13 +391,18 @@ final class AppModel: ObservableObject {
                 "Menu bar reorder persisted but live layout did not update; " +
                 "source=\(source.id); target=\(target.id); inputSynthesis=false"
             )
+            _ = MenuBarAgentBridge.restorePosition(
+                originalPreferredPosition,
+                for: source.semanticIdentifier
+            )
             self.reorderRetryDeadline = Date.now.addingTimeInterval(10)
             self.attemptShieldedReorder(
                 sourceID: source.id,
                 targetID: target.id,
                 placeAfterTarget: placeAfterTarget,
                 attempt: 0,
-                generation: generation
+                generation: generation,
+                physicalMovePerformed: false
             )
         }
     }
@@ -399,7 +412,8 @@ final class AppModel: ObservableObject {
         targetID: String,
         placeAfterTarget: Bool,
         attempt: Int,
-        generation: UInt64
+        generation: UInt64,
+        physicalMovePerformed: Bool
     ) {
         guard isReordering, reorderGeneration == generation else { return }
         guard reorderRetryDeadline.map({ Date.now < $0 }) ?? false else {
@@ -416,7 +430,8 @@ final class AppModel: ObservableObject {
                 placeAfterTarget: placeAfterTarget,
                 attempt: attempt,
                 delay: 0.35,
-                generation: generation
+                generation: generation,
+                physicalMovePerformed: physicalMovePerformed
             )
             return
         }
@@ -435,7 +450,10 @@ final class AppModel: ObservableObject {
             return
         }
 
-        guard attempt < 6 else {
+        // Never synthesize a second physical drag for one user drop. AX can
+        // lag behind WindowServer; repeating the gesture while geometry is
+        // stale is what makes an item overshoot and shifts several neighbours.
+        guard !physicalMovePerformed, attempt < 6 else {
             finishFailedShieldedReorder(sourceID: sourceID, targetID: targetID, generation: generation)
             return
         }
@@ -452,7 +470,7 @@ final class AppModel: ObservableObject {
         let nextAttempt: Int
         switch result {
         case .moved:
-            delay = 0.4
+            delay = 0.8
             nextAttempt = attempt + 1
         case .deferredForUserInput:
             delay = 0.5
@@ -467,7 +485,8 @@ final class AppModel: ObservableObject {
             placeAfterTarget: placeAfterTarget,
             attempt: nextAttempt,
             delay: delay,
-            generation: generation
+            generation: generation,
+            physicalMovePerformed: physicalMovePerformed || result.succeeded
         )
     }
 
@@ -477,7 +496,8 @@ final class AppModel: ObservableObject {
         placeAfterTarget: Bool,
         attempt: Int,
         delay: TimeInterval,
-        generation: UInt64
+        generation: UInt64,
+        physicalMovePerformed: Bool
     ) {
         guard attempt <= 6 else {
             finishFailedShieldedReorder(sourceID: sourceID, targetID: targetID, generation: generation)
@@ -490,7 +510,8 @@ final class AppModel: ObservableObject {
                 targetID: targetID,
                 placeAfterTarget: placeAfterTarget,
                 attempt: attempt,
-                generation: generation
+                generation: generation,
+                physicalMovePerformed: physicalMovePerformed
             )
         }
     }

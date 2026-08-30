@@ -21,11 +21,8 @@ enum MenuBarMoveEngine {
     /// reordering has no public API and still requires a targeted mouse event,
     /// but that event must never take ownership of the user's visible cursor.
     private final class CursorShield {
-        let originalLocation: CGPoint
-        let displayID: CGDirectDisplayID
-        private var cursorWasHidden = false
+        private var cursorWasDecoupled = false
         private let lock = NSLock()
-        private var latestPhysicalLocation: CGPoint
         private var receivedPhysicalInput = false
         private var syntheticGestureInProgress = false
         private var eventTap: CFMachPort?
@@ -33,10 +30,7 @@ enum MenuBarMoveEngine {
         private let runLoop: CFRunLoop
 
         init?() {
-            guard let originalLocation = CGEvent(source: nil)?.location else { return nil }
-            self.originalLocation = originalLocation
-            latestPhysicalLocation = originalLocation
-            displayID = Self.display(containing: originalLocation) ?? CGMainDisplayID()
+            guard CGEvent(source: nil) != nil else { return nil }
             guard let currentRunLoop = CFRunLoopGetCurrent() else { return nil }
             runLoop = currentRunLoop
 
@@ -74,7 +68,16 @@ enum MenuBarMoveEngine {
                     CGEvent.tapEnable(tap: eventTap, enable: true)
                 }
             }
-            cursorWasHidden = CGDisplayHideCursor(displayID) == .success
+            // Keep the visible pointer independent from the coordinates of
+            // the synthetic menu-bar gesture. Hiding and warping the real
+            // cursor still produces a visible jump on macOS 27.
+            cursorWasDecoupled = CGAssociateMouseAndMouseCursorPosition(0) == .success
+            guard cursorWasDecoupled else {
+                if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: false) }
+                if let runLoopSource { CFRunLoopRemoveSource(runLoop, runLoopSource, .commonModes) }
+                if let eventTap { CFMachPortInvalidate(eventTap) }
+                return nil
+            }
         }
 
         var userInteracted: Bool {
@@ -100,32 +103,16 @@ enum MenuBarMoveEngine {
             if let runLoopSource { CFRunLoopRemoveSource(runLoop, runLoopSource, .commonModes) }
             if let eventTap { CFMachPortInvalidate(eventTap) }
 
-            lock.lock()
-            let restoreLocation = latestPhysicalLocation
-            lock.unlock()
-            // A real HID event updates latestPhysicalLocation, while our
-            // synthetic session events do not. If the user moved or clicked
-            // during a background operation, restore to their newest physical
-            // position instead of yanking them back to an older location.
-            CGWarpMouseCursorPosition(restoreLocation)
-            if cursorWasHidden {
-                CGDisplayShowCursor(displayID)
+            if cursorWasDecoupled {
+                CGAssociateMouseAndMouseCursorPosition(1)
+                cursorWasDecoupled = false
             }
         }
 
-        private func recordPhysicalInput(at location: CGPoint) {
+        private func recordPhysicalInput(at _: CGPoint) {
             lock.lock()
-            latestPhysicalLocation = location
             receivedPhysicalInput = true
             lock.unlock()
-        }
-
-        private static func display(containing point: CGPoint) -> CGDirectDisplayID? {
-            var count: UInt32 = 0
-            guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return nil }
-            var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
-            guard CGGetActiveDisplayList(count, &displays, &count) == .success else { return nil }
-            return displays.prefix(Int(count)).first { CGDisplayBounds($0).contains(point) }
         }
     }
 

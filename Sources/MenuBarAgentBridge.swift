@@ -229,11 +229,15 @@ enum MenuBarAgentBridge {
     }
 
     @MainActor
-    static func restorePosition(_ position: Double, for key: String) -> Bool {
+    static func restorePosition(_ position: Double?, for key: String) -> Bool {
         guard isAvailable, key.hasPrefix("status:"), var current = positions(), current[key] != nil else {
             return false
         }
-        current[key] = position
+        if let position {
+            current[key] = position
+        } else {
+            current.removeValue(forKey: key)
+        }
         CFPreferencesSetValue(
             positionsKey as CFString,
             current as CFDictionary,
@@ -246,7 +250,11 @@ enum MenuBarAgentBridge {
             kCFPreferencesCurrentUser,
             kCFPreferencesAnyHost
         )
-        Diagnostics.shared.append("MenuBarAgent position restored; key=\(key); position=\(position); synchronized=\(synchronized)")
+        let restoredPosition = position.map { String($0) } ?? "removed"
+        Diagnostics.shared.append(
+            "MenuBarAgent position restored; key=\(key); " +
+            "position=\(restoredPosition); synchronized=\(synchronized)"
+        )
         return synchronized
     }
 
