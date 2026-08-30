@@ -140,15 +140,22 @@ final class StatusBarController: NSObject {
         // Recreate only our own AppKit item so the new autosaved slot is
         // consumed without synthesizing Command-drag or keyboard events.
         // Removing an autosaved status item deletes its preferred-position
-        // key, so the new value must be written after removal, not before it.
+        // key when the old NSStatusItem is finally released. Replace the
+        // retained property first, then write the key, then attach the
+        // autosave name so AppKit consumes the new position.
         NSStatusBar.system.removeStatusItem(toggleItem)
+        let replacement = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        toggleItem = replacement
         UserDefaults.standard.set(target, forKey: key)
-        guard UserDefaults.standard.synchronize() else { return false }
-        toggleItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        let synchronized = UserDefaults.standard.synchronize()
         toggleItem.autosaveName = AutosaveName.toggle
         configureToggle()
-        Diagnostics.shared.append("Open Notch preferred position recreated; position=\(target)")
-        return true
+        let persisted = UserDefaults.standard.object(forKey: key) as? NSNumber
+        Diagnostics.shared.append(
+            "Open Notch preferred position recreated; requested=\(target); " +
+            "persisted=\(persisted?.doubleValue.description ?? "missing"); synchronized=\(synchronized)"
+        )
+        return persisted != nil
     }
 
     func updateMenu(isExpanded: Bool, guardianEnabled: Bool, hasAccessibilityPermission: Bool) {
