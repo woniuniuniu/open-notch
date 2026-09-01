@@ -154,7 +154,7 @@ private struct Sidebar: View {
                 .padding(.horizontal, 18)
 
             VStack(spacing: 1) {
-                ForEach(NavigationPage.allCases) { page in
+                ForEach([NavigationPage.items, NavigationPage.settings]) { page in
                     SidebarRow(
                         title: page.title,
                         symbol: page.symbol,
@@ -440,7 +440,7 @@ private struct ActivityView: View {
                 GhostButton(title: L("Export Diagnostics")) { model.exportDiagnostics() }
             }
             .padding(.horizontal, 24)
-            .padding(.top, 14)
+            .padding(.top, 32)
             .padding(.bottom, 12)
             Hairline()
             if model.activity.isEmpty {
@@ -449,7 +449,7 @@ private struct ActivityView: View {
                     .foregroundStyle(OpenBarTheme.muted)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
+                ScrollView(showsIndicators: false) {
                     LazyVStack(spacing: 0) {
                         ForEach(model.activity) { entry in
                             HStack(spacing: 10) {
@@ -481,106 +481,158 @@ private struct SettingsView: View {
         VStack(spacing: 0) {
             HStack {
                 Text(L("Settings"))
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                 Spacer()
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 14)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 28)
+            .padding(.top, 32)
+            .padding(.bottom, 16)
             Hairline()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    settingsBlock(L("Behavior")) {
-                        SettingsToggleRow(
-                            title: L("Layout guardian"),
-                            subtitle: L("Repair confirmed layout drift in the background"),
-                            isOn: Binding(
-                                get: { store.document.preferences.guardianEnabled },
-                                set: { model.setGuardianEnabled($0) }
-                            )
-                        )
-                        SettingsToggleRow(
-                            title: L("Launch at login"),
-                            subtitle: L("Restore your menu bar after signing in"),
-                            isOn: Binding(
-                                get: { SMAppService.mainApp.status == .enabled },
-                                set: { model.setLaunchAtLogin($0) }
-                            )
-                        )
-                        SettingsToggleRow(
-                            title: L("Show in Dock"),
-                            subtitle: L("Keep OPEN BAR alongside regular applications"),
-                            isOn: Binding(
-                                get: { store.document.preferences.showInDock },
-                                set: { model.setShowInDock($0) }
-                            )
-                        )
-                    }
-
-                    settingsBlock(L("Appearance")) {
-                        SettingsChoiceRow(title: L("Language")) {
-                            ForEach(AppLanguage.allCases) { language in
-                                SettingsChip(
-                                    title: language.localizedTitle,
-                                    selected: store.document.preferences.language == language
-                                ) { model.setLanguage(language) }
-                            }
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 26) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: 28) {
+                            behaviorBlock
+                                .frame(minWidth: 280, maxWidth: .infinity, alignment: .topLeading)
+                            appearanceBlock
+                                .frame(minWidth: 280, maxWidth: .infinity, alignment: .topLeading)
                         }
-                        SettingsChoiceRow(title: L("Appearance")) {
-                            ForEach(AppearancePreference.allCases) { appearance in
-                                SettingsChip(
-                                    title: appearance.localizedTitle,
-                                    selected: store.document.preferences.appearance == appearance
-                                ) { model.setAppearance(appearance) }
-                            }
+                        VStack(alignment: .leading, spacing: 26) {
+                            behaviorBlock
+                            appearanceBlock
                         }
                     }
 
                     settingsBlock(L("AI")) { AISettingsView() }
 
-                    settingsBlock(L("System")) {
-                        SettingsValueRow(title: L("Backend"), value: model.backendName)
-                        SettingsValueRow(
-                            title: L("Accessibility"),
-                            value: model.hasAccessibilityPermission ? L("Granted") : L("Missing")
-                        )
-                        SettingsValueRow(
-                            title: L("macOS"),
-                            value: ProcessInfo.processInfo.operatingSystemVersionString
-                        )
-                        SettingsValueRow(
-                            title: L("Version"),
-                            value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
-                        )
-                    }
-
-                    settingsBlock(L("Data")) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(L("Policy file")).font(.system(size: 13))
-                                Text(L("A readable, versioned record of every menu bar choice"))
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(OpenBarTheme.muted)
-                            }
-                            Spacer()
-                            GhostButton(title: L("Show in Finder")) { model.revealPolicyFile() }
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: 28) {
+                            systemBlock
+                                .frame(minWidth: 280, maxWidth: .infinity, alignment: .topLeading)
+                            dataBlock
+                                .frame(minWidth: 280, maxWidth: .infinity, alignment: .topLeading)
                         }
-                        .padding(.vertical, 8)
+                        VStack(alignment: .leading, spacing: 26) {
+                            systemBlock
+                            dataBlock
+                        }
                     }
                 }
-                .padding(24)
-                .frame(maxWidth: 640, alignment: .leading)
+                .padding(.horizontal, 30)
+                .padding(.vertical, 24)
+                .frame(maxWidth: 760, alignment: .leading)
+                .frame(maxWidth: .infinity)
             }
         }
         .background(OpenBarTheme.canvas)
     }
 
+    private var behaviorBlock: some View {
+        settingsBlock(L("Behavior")) {
+            SettingsToggleRow(
+                title: L("Layout guardian"),
+                subtitle: L("Repair confirmed layout drift in the background"),
+                isOn: Binding(
+                    get: { store.document.preferences.guardianEnabled },
+                    set: { model.setGuardianEnabled($0) }
+                )
+            )
+            SettingsToggleRow(
+                title: L("Launch at login"),
+                subtitle: L("Restore your menu bar after signing in"),
+                isOn: Binding(
+                    get: { SMAppService.mainApp.status == .enabled },
+                    set: { model.setLaunchAtLogin($0) }
+                )
+            )
+            SettingsToggleRow(
+                title: L("Show in Dock"),
+                subtitle: L("Keep OPEN BAR alongside regular applications"),
+                isOn: Binding(
+                    get: { store.document.preferences.showInDock },
+                    set: { model.setShowInDock($0) }
+                )
+            )
+        }
+    }
+
+    private var appearanceBlock: some View {
+        settingsBlock(L("Appearance")) {
+            SettingsChoiceRow(title: L("Language")) {
+                ForEach(AppLanguage.allCases) { language in
+                    SettingsChip(
+                        title: language.localizedTitle,
+                        selected: store.document.preferences.language == language
+                    ) { model.setLanguage(language) }
+                }
+            }
+            SettingsChoiceRow(title: L("Appearance")) {
+                ForEach(AppearancePreference.allCases) { appearance in
+                    SettingsChip(
+                        title: appearance.localizedTitle,
+                        selected: store.document.preferences.appearance == appearance
+                    ) { model.setAppearance(appearance) }
+                }
+            }
+        }
+    }
+
+    private var systemBlock: some View {
+        settingsBlock(L("System")) {
+            SettingsValueRow(title: L("Backend"), value: model.backendName)
+            SettingsValueRow(
+                title: L("Accessibility"),
+                value: model.hasAccessibilityPermission ? L("Granted") : L("Missing")
+            )
+            SettingsValueRow(
+                title: L("macOS"),
+                value: ProcessInfo.processInfo.operatingSystemVersionString
+            )
+            SettingsValueRow(
+                title: L("Version"),
+                value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
+            )
+        }
+    }
+
+    private var dataBlock: some View {
+        settingsBlock(L("Data")) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L("Policy file")).font(.system(size: 13, weight: .medium))
+                    Text(L("A readable, versioned record of every menu bar choice"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(OpenBarTheme.muted)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 8)
+                GhostButton(title: L("Show in Finder")) { model.revealPolicyFile() }
+            }
+            .frame(minHeight: 48)
+
+            Hairline()
+
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L("Activity log")).font(.system(size: 13, weight: .medium))
+                    Text(L("Detailed events for troubleshooting"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(OpenBarTheme.muted)
+                }
+                Spacer(minLength: 8)
+                GhostButton(title: L("Open Activity")) { model.selectedPage = .activity }
+            }
+            .frame(minHeight: 48)
+        }
+    }
+
     private func settingsBlock<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(OpenBarTheme.muted)
+            Hairline()
             VStack(alignment: .leading, spacing: 0) { content() }
         }
     }

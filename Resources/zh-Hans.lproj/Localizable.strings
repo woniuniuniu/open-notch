@@ -2,6 +2,9 @@
 "Open Bar Brand" = "若栏";
 "Menu Bar" = "菜单栏";
 "Activity" = "动态";
+"Activity log" = "动态日志";
+"Detailed events for troubleshooting" = "用于排查问题的详细事件记录";
+"Open Activity" = "查看动态";
 "Settings" = "设置";
 "Shown" = "显示";
 "Hidden" = "隐藏";

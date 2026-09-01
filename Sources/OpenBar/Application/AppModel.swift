@@ -42,6 +42,8 @@ final class AppModel: ObservableObject {
     private var openWindow: (() -> Void)?
     private var driftTracker = DriftTracker()
     private var lastReportedScanCount: Int?
+    private var lastGuardianSignature: String?
+    private var lastLiveOrderSignature: String?
 
     private init() {}
 
@@ -255,7 +257,10 @@ final class AppModel: ObservableObject {
         let order = scanned.enumerated().map { index, item in
             "\(index):\(item.displayName)[\(item.bundleIdentifier)]@x=\(Int(item.frame.minX))"
         }.joined(separator: " | ")
-        Diagnostics.shared.append("live menu bar order: \(order)")
+        if !reconcile || order != lastLiveOrderSignature {
+            Diagnostics.shared.append("live menu bar order: \(order)")
+            lastLiveOrderSignature = order
+        }
         store.remember(scanned)
         lastScanDate = .now
         isScanning = false
@@ -541,6 +546,11 @@ final class AppModel: ObservableObject {
             lastOperationMessage = L("Accessibility permission is required")
             return
         }
+        if case .guardian = reason {
+            let signature = guardianSignature()
+            guard signature != lastGuardianSignature else { return }
+            lastGuardianSignature = signature
+        }
         let result = backend.apply(
             document: store.document,
             liveItems: liveItems,
@@ -579,7 +589,7 @@ final class AppModel: ObservableObject {
         // launched app must still appear in the workspace; the preference only
         // controls whether drift repair is performed after the scan.
         guard canManage else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh(reconcile: true) }
         }
     }
@@ -621,6 +631,17 @@ final class AppModel: ObservableObject {
         activity.insert(.init(level: level, message: message), at: 0)
         activity = Array(activity.prefix(80))
         Diagnostics.shared.append(message)
+    }
+
+    private func guardianSignature() -> String {
+        let known = store.document.knownItems.keys.sorted().map { id in
+            "\(id)=\(store.section(for: id).rawValue)"
+        }
+        let live = liveItems.filter { !$0.isProtected }.map { item in
+            "\(item.id)=\(store.section(for: item.id).rawValue)"
+        }.sorted()
+        return [isExpanded ? "expanded" : "collapsed", known.joined(separator: ","), live.joined(separator: ",")]
+            .joined(separator: "|")
     }
 
     private func isGuardianReason(_ reason: ApplyReason) -> Bool {
