@@ -6,76 +6,10 @@ private final class OpenBarWindow: NSWindow {
     override var canBecomeMain: Bool { true }
 }
 
-private final class OpenBarDragStrip: NSView {
-    override func hitTest(_ point: NSPoint) -> NSView? { self }
-
+private final class OpenBarHostingView<Content: View>: NSHostingView<Content> {
+    // Borderless accessory windows can otherwise consume the first click only
+    // to become key, making every control appear unresponsive after launch.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    private var dragStartScreenPoint: NSPoint?
-    private var dragStartWindowOrigin: NSPoint?
-
-    override func mouseDown(with event: NSEvent) {
-        guard event.type == .leftMouseDown, let window else { return }
-        dragStartScreenPoint = window.convertPoint(toScreen: event.locationInWindow)
-        dragStartWindowOrigin = window.frame.origin
-        NSCursor.closedHand.push()
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        guard let window,
-              let dragStartScreenPoint,
-              let dragStartWindowOrigin
-        else { return }
-        let currentScreenPoint = window.convertPoint(toScreen: event.locationInWindow)
-        let delta = NSPoint(
-            x: currentScreenPoint.x - dragStartScreenPoint.x,
-            y: currentScreenPoint.y - dragStartScreenPoint.y
-        )
-        window.setFrameOrigin(NSPoint(
-            x: dragStartWindowOrigin.x + delta.x,
-            y: dragStartWindowOrigin.y + delta.y
-        ))
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        dragStartScreenPoint = nil
-        dragStartWindowOrigin = nil
-        NSCursor.pop()
-    }
-}
-
-private final class OpenBarContentView: NSView {
-    private let hosting: NSView
-    private let dragStrip = OpenBarDragStrip()
-
-    init<Content: View>(rootView: Content) {
-        hosting = NSHostingView(rootView: rootView)
-        super.init(frame: .zero)
-        wantsLayer = true
-
-        hosting.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(hosting)
-        NSLayoutConstraint.activate([
-            hosting.leadingAnchor.constraint(equalTo: leadingAnchor),
-            hosting.trailingAnchor.constraint(equalTo: trailingAnchor),
-            hosting.topAnchor.constraint(equalTo: topAnchor),
-            hosting.bottomAnchor.constraint(equalTo: bottomAnchor)
-        ])
-
-        // AppKit drag surface: only the top blank strip is intercepted. The
-        // rest of the hosting view remains fully interactive for item drags.
-        dragStrip.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(dragStrip, positioned: .above, relativeTo: nil)
-        NSLayoutConstraint.activate([
-            dragStrip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 84),
-            dragStrip.trailingAnchor.constraint(equalTo: trailingAnchor),
-            dragStrip.topAnchor.constraint(equalTo: topAnchor),
-            dragStrip.heightAnchor.constraint(equalToConstant: 28)
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }
 
 @main
@@ -93,6 +27,9 @@ enum OpenBarApplication {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
+    private var windowDragMonitor: Any?
+    private var dragStartScreenPoint: NSPoint?
+    private var dragStartWindowOrigin: NSPoint?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         terminateDuplicateInstances()
@@ -101,6 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if let windowDragMonitor {
+            NSEvent.removeMonitor(windowDragMonitor)
+            self.windowDragMonitor = nil
+        }
         AppModel.shared.stop()
     }
 
@@ -139,10 +80,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             created.collectionBehavior = [.managed, .moveToActiveSpace]
             created.isReleasedWhenClosed = false
             created.minSize = NSSize(width: 760, height: 560)
-            created.contentView = OpenBarContentView(rootView: content)
+            created.contentView = OpenBarHostingView(rootView: content)
             configureWindowSurface(created)
             created.center()
             window = created
+            installWindowDragMonitor(for: created)
         }
         NSApp.activate(ignoringOtherApps: true)
         if let window {
@@ -179,6 +121,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             view.layer?.backgroundColor = NSColor.clear.cgColor
         }
 
+    }
+
+    private func installWindowDragMonitor(for window: NSWindow) {
+        windowDragMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        ) { [weak self, weak window] event in
+            guard let self, let window, event.window === window else { return event }
+
+            let contentHeight = window.contentView?.bounds.height ?? window.frame.height
+            let point = event.locationInWindow
+            let isTopDragArea = point.x >= 84 && point.y >= contentHeight - 28
+
+            switch event.type {
+            case .leftMouseDown where isTopDragArea:
+                self.dragStartScreenPoint = window.convertPoint(toScreen: point)
+                self.dragStartWindowOrigin = window.frame.origin
+                NSCursor.closedHand.push()
+                return nil
+            case .leftMouseDragged where self.dragStartScreenPoint != nil:
+                guard let startPoint = self.dragStartScreenPoint,
+                      let startOrigin = self.dragStartWindowOrigin
+                else { return nil }
+                let currentPoint = window.convertPoint(toScreen: point)
+                window.setFrameOrigin(NSPoint(
+                    x: startOrigin.x + currentPoint.x - startPoint.x,
+                    y: startOrigin.y + currentPoint.y - startPoint.y
+                ))
+                return nil
+            case .leftMouseUp where self.dragStartScreenPoint != nil:
+                self.dragStartScreenPoint = nil
+                self.dragStartWindowOrigin = nil
+                NSCursor.pop()
+                return nil
+            default:
+                return event
+            }
+        }
     }
 
     private func terminateDuplicateInstances() {
