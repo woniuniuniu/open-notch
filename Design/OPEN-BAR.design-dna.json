@@ -1,0 +1,228 @@
+{
+  "meta": {
+    "name": "OPEN BAR Nocturnal Glass Atelier",
+    "description": "A dark, tactile menu-bar atelier. Three luminous virtual bars are the product. Vertical drag between them is the primary gesture. Surfaces are glass, specular, and springy — never a generic list console.",
+    "source_references": [
+      "Original OPEN BAR three-lane drag interaction",
+      "macOS menu bar and Dynamic Island material language",
+      "Rejected Linear inbox clone"
+    ],
+    "created_at": "2026-08-31"
+  },
+  "design_system": {
+    "color": {
+      "palette_type": "split-complementary",
+      "primary": { "hex": "#090A0D", "role": "nocturnal studio ground" },
+      "secondary": { "hex": "#14161C", "role": "raised glass wash" },
+      "accent": { "hex": "#5EEAD4", "role": "shown-state, AI, confirmation glow" },
+      "neutral": {
+        "scale": ["#090A0D", "#14161C", "#1E222B", "#3C4450", "#8B93A1", "#D5D8DE", "#F6F3EC"],
+        "usage": "Ink ground, cool glass steps, muted metadata, warm paper in light mode"
+      },
+      "semantic": {
+        "success": "#5EEAD4",
+        "warning": "#F3C16B",
+        "error": "#FF7A7A",
+        "info": "#8B9CFF"
+      },
+      "surface": {
+        "background": "#090A0D",
+        "card": "#14161C",
+        "elevated": "#1A1E27"
+      },
+      "contrast_strategy": "Dark studio with a single luminous accent family; section tints are glow, not paint"
+    },
+    "typography": {
+      "type_scale": {
+        "display": { "size": "28px", "weight": "600", "line_height": "1.12", "tracking": "-0.03em" },
+        "heading_1": { "size": "18px", "weight": "600", "line_height": "1.2", "tracking": "-0.02em" },
+        "heading_2": { "size": "13px", "weight": "600", "line_height": "1.25", "tracking": "0.04em" },
+        "heading_3": { "size": "12px", "weight": "500", "line_height": "1.3", "tracking": "0.08em" },
+        "body": { "size": "13px", "weight": "450", "line_height": "1.45", "tracking": "0" },
+        "body_small": { "size": "12px", "weight": "450", "line_height": "1.4", "tracking": "0" },
+        "caption": { "size": "11px", "weight": "500", "line_height": "1.3", "tracking": "0.02em" },
+        "overline": { "size": "10px", "weight": "650", "line_height": "1.2", "tracking": "0.14em" }
+      },
+      "font_families": {
+        "heading": "SF Pro Display",
+        "body": "SF Pro Text",
+        "mono": "SF Mono"
+      },
+      "font_style_notes": "Display titles are large and quiet. Overlines are tracked labels for the three bars. Never use a rounded novelty face."
+    },
+    "spacing": {
+      "base_unit": "4px",
+      "scale": ["4px", "8px", "12px", "16px", "24px", "32px", "48px"],
+      "content_density": "generous",
+      "section_rhythm": "12px inside a virtual bar, 28px between the three bars, 32px around the stage"
+    },
+    "layout": {
+      "grid_system": "Full-width stage under a floating top chrome; three stacked virtual menu bars",
+      "max_content_width": "1080px",
+      "columns": "One stage column",
+      "gutter": "32px",
+      "breakpoints": ["920px minimum window", "1100px preferred"],
+      "alignment_tendency": "center-weighted stage"
+    },
+    "shape": {
+      "border_radius": { "small": "8px", "medium": "14px", "large": "24px", "pill": "999px" },
+      "border_usage": "1px specular highlight on the top edge of glass islands",
+      "divider_style": "Almost none; space and glow separate the three bars"
+    },
+    "elevation": {
+      "shadow_style": "colored glow plus deep studio drop",
+      "levels": {
+        "low": "0 8px 18px rgba(0,0,0,0.22)",
+        "medium": "0 18px 40px rgba(0,0,0,0.38)",
+        "high": "0 24px 60px rgba(94,234,212,0.18)"
+      },
+      "depth_cues": "Inner top highlight, colored ambient glow, icon lift on hover"
+    },
+    "iconography": {
+      "style": "Real application icons sitting on a menu-bar island, 28px, with a live status speck",
+      "stroke_weight": "light",
+      "size_scale": ["12px", "15px", "28px", "32px"],
+      "preferred_set": "Live app icons plus SF Symbols for chrome"
+    },
+    "motion": {
+      "easing": "spring(0.32, 0.78)",
+      "duration_scale": { "micro": "120ms", "normal": "280ms", "macro": "420ms" },
+      "entrance_pattern": "Fade plus 8px rise",
+      "exit_pattern": "Fade",
+      "philosophy": "Physical: icons lift, bars bloom when they can receive a drop"
+    },
+    "components": {
+      "button_style": "Pill chrome; AI is a luminous capsule with colored bloom",
+      "input_style": "Glass search field, 36px tall, no hard rectangle",
+      "card_style": "The only cards are the three virtual menu bars — glass islands, not list rows",
+      "navigation_pattern": "Floating top chrome with a capsule page switcher",
+      "modal_style": "Glass sheet with two miniature menu-bar previews",
+      "list_style": "Unused on the home stage; activity uses soft glass rows",
+      "component_notes": "Never replace the three bars with an inbox. Drag is vertical between bars only."
+    }
+  },
+  "design_style": {
+    "aesthetic": {
+      "mood": ["nocturnal", "tactile", "luminous", "composed"],
+      "visual_metaphor": "Three physical menu bars floating in a dark atelier, waiting to receive icons",
+      "era_influence": "Apple spatial material, Dynamic Island, high-end instrument panels",
+      "genre": "spatial utility",
+      "personality_traits": ["assured", "sensual", "precise"],
+      "adjectives": ["glassy", "springy", "cinematic", "quiet-luxury"]
+    },
+    "visual_language": {
+      "complexity": "simple",
+      "ornamentation": "specular edges and colored bloom only",
+      "whitespace_usage": "Wide stage, dense icons on each bar",
+      "visual_weight_distribution": "The three islands carry all weight; chrome recedes",
+      "focal_strategy": "Glow on the active drop target and the hovering icon",
+      "contrast_level": "high",
+      "texture_usage": "Frosted glass, inner highlight, atmospheric radial wash"
+    },
+    "composition": {
+      "hierarchy_method": "Scale of the three bars, then glow, then type",
+      "balance_type": "centered stage",
+      "flow_direction": "top chrome, then downward through Shown → Hidden → Always Hidden",
+      "grouping_strategy": "One island per visibility policy",
+      "negative_space_role": "Makes the bars feel like objects in space"
+    },
+    "imagery": {
+      "photo_treatment": "None",
+      "illustration_style": "None",
+      "graphic_elements": "Status specks, specular rims, aurora wash",
+      "pattern_usage": "none",
+      "image_shape": "28px app icons with a 7px live speck"
+    },
+    "interaction_feel": {
+      "feedback_style": "Spring lift, bloom, and a name capsule",
+      "hover_behavior": "Icon rises 4px and scales to 1.14; bar warms",
+      "transition_personality": "spring-physical",
+      "loading_style": "Sparkles plus inline progress in the AI capsule",
+      "microinteraction_density": "medium"
+    },
+    "brand_voice_in_ui": {
+      "tone": "quiet and exact",
+      "formality": "refined",
+      "cta_style": "short luminous verbs",
+      "empty_state_approach": "An empty island still looks like a menu bar",
+      "error_tone": "Calm and specific"
+    }
+  },
+  "visual_effects": {
+    "overview": {
+      "effect_intensity": "subtle-accent",
+      "performance_tier": "lightweight",
+      "fallback_strategy": "Keep fills and hide bloom when Reduce Motion is on",
+      "primary_technology": "SwiftUI materials, radial atmosphere, spring animations"
+    },
+    "background_effects": {
+      "type": "gradient",
+      "description": "Two large radial washes — teal top-left, periwinkle bottom-right — on ink",
+      "technology": "SwiftUI RadialGradient",
+      "params": { "color_palette": ["#5EEAD4", "#8B9CFF", "#090A0D"], "speed": "0", "density": "0.18", "opacity": "0.16", "blend_mode": "plus-lighter" }
+    },
+    "particle_systems": {
+      "enabled": false,
+      "type": "none",
+      "description": "No particles",
+      "technology": "none",
+      "params": { "count": "0", "shape": "none", "size_range": "0", "movement_pattern": "none", "color_behavior": "none", "interaction": "none", "spawn_area": "none" }
+    },
+    "3d_elements": {
+      "enabled": false,
+      "type": "none",
+      "description": "Depth is simulated with glow and lift, not a 3D renderer",
+      "technology": "none",
+      "params": { "renderer": "none", "lighting": "none", "camera": "none", "materials": "none", "geometry": "none", "post_processing": [], "interaction_model": "none" }
+    },
+    "shader_effects": {
+      "enabled": false,
+      "type": "none",
+      "description": "No custom shaders",
+      "technology": "none",
+      "params": { "uniforms": {}, "vertex_manipulation": "none", "fragment_output": "none", "noise_type": "none", "distortion": "none" }
+    },
+    "scroll_effects": {
+      "parallax": { "enabled": false, "layers": "0", "depth_range": "0", "speed_curve": "none" },
+      "scroll_triggered_animations": { "enabled": false, "trigger_points": [], "animation_type": "none", "scrub_behavior": "none" },
+      "scroll_morphing": { "enabled": false, "description": "No scroll morphing" }
+    },
+    "text_effects": {
+      "type": "none",
+      "description": "Static type; hover names fade and scale from the icon",
+      "technology": "SwiftUI Text",
+      "params": { "split_strategy": "none", "animation_per_unit": "none", "stagger": "0", "effect_style": "none" }
+    },
+    "cursor_effects": {
+      "enabled": false,
+      "type": "none",
+      "description": "Native pointer; the icon and bar react instead",
+      "params": { "shape": "system", "size": "system", "blend_mode": "normal", "trail": "none", "interaction_zone": "none" }
+    },
+    "image_effects": {
+      "type": "filter",
+      "description": "Icons lift with a colored contact shadow on hover",
+      "technology": "SwiftUI shadow + scale",
+      "params": { "filter_pipeline": ["lift", "contact-shadow"], "hover_transform": "scale 1.14 translateY -4", "reveal_animation": "spring", "distortion_type": "none" }
+    },
+    "glassmorphism_neumorphism": {
+      "enabled": true,
+      "style": "frosted-layers",
+      "params": { "blur_radius": "ultraThinMaterial", "transparency": "0.72", "border_treatment": "1px top specular white 28%", "shadow_type": "colored bloom", "light_source_angle": "top" }
+    },
+    "canvas_drawings": {
+      "enabled": false,
+      "type": "none",
+      "description": "No canvas drawing",
+      "technology": "none",
+      "params": { "draw_method": "none", "animation_loop": "none", "color_scheme": "none", "responsiveness": "none", "interaction": "none" }
+    },
+    "svg_animations": {
+      "enabled": false,
+      "type": "none",
+      "description": "No SVG animation",
+      "params": { "animation_method": "none", "path_morphing": "none", "stroke_animation": "none", "filter_effects": "none" }
+    },
+    "composite_notes": "The three virtual bars must read as objects. Bloom on drop-target, specular rim, and icon lift are the entire effects budget."
+  }
+}

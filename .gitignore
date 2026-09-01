@@ -1,6 +1,7 @@
-# Build products and local signing output
-build/
+# SwiftPM and Xcode build products
+.build/
 DerivedData/
+build/
 *.app/
 *.zip
 
@@ -13,7 +14,10 @@ DerivedData/
 xcuserdata/
 *.swp
 
-# Local diagnostic output
+# Local diagnostics and secrets
 *.log
 *.dump
+.env
+.env.*
+!.env.example
 coverage/

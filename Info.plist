@@ -2,42 +2,42 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
-    <key>CFBundleLocalizations</key>
-    <array>
-        <string>en</string>
-        <string>zh-Hans</string>
-    </array>
-    <key>CFBundleDisplayName</key>
-    <string>Open Notch</string>
-    <key>CFBundleExecutable</key>
-    <string>OpenNotch</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.openbartender.OpenNotch</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>Open Notch</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>OPEN BAR</string>
+	<key>CFBundleExecutable</key>
+	<string>OpenBar</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.woniuniuniu.OpenBar</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>zh-Hans</string>
+	</array>
+	<key>CFBundleName</key>
+	<string>OPEN BAR</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.8.1</string>
+	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>22</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2026 Open Notch contributors</string>
-    <key>NSSupportsAutomaticGraphicsSwitching</key>
-    <true/>
-    <key>OpenNotchAIEndpoint</key>
-    <string>https://open-notch-ai.vercel.app/api/recommend</string>
+	<string>100</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>OpenBarAIEndpoint</key>
+	<string>https://open-notch-ai.vercel.app/api/recommend</string>
+	<key>NSSupportsAutomaticGraphicsSwitching</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 OPEN BAR contributors</string>
 </dict>
 </plist>

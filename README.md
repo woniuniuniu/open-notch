@@ -1,180 +1,71 @@
-# Open Notch（开放刘海）
+# OPEN BAR / 若栏 · 1.0 beta
 
-语言：简体中文 | [English](README.en.md)
+OPEN BAR （中文名：若栏）是一个原生、开源的 macOS 菜单栏管理器。这是一次完整的 1.0 beta 结构重写，旧 `open-notch` 代码不是它的结构基础。
 
-[![macOS](https://img.shields.io/badge/macOS-14%2B-111111?logo=apple)](https://www.apple.com/macos/)
-[![Swift](https://img.shields.io/badge/Swift-5-FA7343?logo=swift&logoColor=white)](https://www.swift.org/)
-[![License](https://img.shields.io/badge/license-GPL--3.0-only-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.8.1-2ea44f)](https://github.com/woniuniuniu/open-notch)
+## 能力
 
-**整理你的 Mac 菜单栏。开源、原生，也能把 OneDrive 稳稳钉住。**
+- 显示、隐藏、始终隐藏三条紧凑轨道：图标无文字卡片，悬停显示完整名称；图标顺序始终跟随真实菜单栏从左到右的顺序，拖拽只负责跨区显示策略。
+- 稳定身份解析：OneDrive 等标题和窗口会变的项目使用 Bundle ID 级身份。
+- 布局守护：只有连续两次确认偏移后才修复，并设有冷却期。
+- 新菜单栏项目：应用启动或菜单栏项目出现时自动登记，默认放入“显示”，并按 macOS 当前真实顺序插入；已经记录但暂未运行的 App 会保留为离线项目，启动后原位更新。
+- 状态栏向下箭头会打开紧凑半透明快捷栏，可直接搜索并查看全部项目。
+- AI 一键排位：用户主动点击后，会结合 Mac 型号、内置屏幕物理尺寸、分辨率和右侧可用宽度生成方案；远端不可用时会明确标记并回退到本地方案。
+- AI 方案会同时决定三分区与顺序，先显示 Before / After 审核，只有用户确认后才应用。
+- 中英文、浅色/深色、登录启动、状态栏快捷菜单、可导出诊断。
+- 策略保存为可读、可版本化的 `policies.json`，损坏文件会自动隔离。
 
-Open Notch 是一个完全开源的 **Mac 菜单栏管理工具**。它可以隐藏、显示和整理菜单栏图标，让常用图标留在该在的位置，让你的 Mac 顶栏重新变得干净、好用。
+## macOS 26 / 27 架构
 
-它致敬 Bartender 和 Ice，主体功能从零开始开发，是一个独立的开源项目。
+```text
+SwiftUI UI -> AppModel -> MenuBarBackend
+                            |- LegacyMenuBarBackend (macOS 14-26)
+                            |  WindowServer + AX + two section boundaries
+                            |  targeted drag for section placement, never horizontal reorder or global HID posting
+                            `- MenuBarAgentBackend (macOS 27+)
+                               AX inventory + preference slots + assessment assertion
+```
 
-## 界面预览
+UI、策略、AI 排位和守护状态机中没有散落的系统版本判断。macOS 27 的运行时私有符号全部收口在单独适配器中，符号不存在时只降级功能，不会阻止 App 启动。
 
-截图来自新版 Open Notch 的真实运行界面：
+macOS 27 当前按拥有者 Bundle ID 应用显示限制，因此同一 App 创建的多个菜单栏项会一起显示或隐藏。界面会明确显示这一系统边界。
 
-<table>
-  <tr>
-    <td width="50%"><img src="docs/images/open-notch-overview-zh.png" alt="Open Notch 中文总览" /></td>
-    <td width="50%"><img src="docs/images/open-notch-menu-items-zh.png" alt="Open Notch 中文菜单栏图标管理" /></td>
-  </tr>
-  <tr>
-    <td align="center">总览</td>
-    <td align="center">菜单栏图标管理</td>
-  </tr>
-</table>
+## 构建
 
-## 为什么做 Open Notch
-
-从 macOS 15 Sequoia 开始，苹果连续调整菜单栏相关机制。很多原本好用的工具突然失效，开发者只能不断追着系统更新。
-
-过去这些年，Mac 用户习惯花钱购买各种菜单栏工具。每个产品都有自己的方向和技术路线，但真正能让大家一起维护、一起把它做强的开源选择并不多。
-
-所以我们想得很简单：**为什么不直接开源？**
-
-我们用 AI，从零 vibe coding 了 Open Notch 的主体功能。代码公开、问题公开、路线也公开。任何人都可以免费使用，也可以一起改进。它要做的第一件事，就是让普通用户可以简单地隐藏、显示和整理自己的菜单栏图标。
-
-第二个问题来自 OneDrive。我自己长期使用 OneDrive，但它的菜单栏图标经常跳来跳去：有时被隐藏，有时又自己跑出来，很多菜单栏工具都无法稳定识别。所以我们又做了 OneDrive 守护功能，尽可能把它“锁”在菜单栏里。
-
-这只是开始。只要大家愿意提需求、报问题，我们就会继续更新。目标也很直接：**把 Open Notch 做成世界上最好用的开源 Mac 菜单栏管理工具。**
-
-## 致敬与项目边界
-
-Open Notch 向两个优秀产品学习：
-
-- **[Bartender](https://www.macbartender.com/)** 强调“掌控你的菜单栏”，让隐藏、显示、搜索和整理菜单栏图标成为一套完整体验。
-- **[Ice](https://icemenubar.app/)** 把自己定义为一款强大的菜单栏管理工具，并把隐藏、显示、排列图标等能力做成了开源项目。
-
-Open Notch 致敬它们的产品方向，也认真学习它们的表达方式。我们没有复制 Bartender 的代码、资源或专有实现。`Sources/TargetedEventRouter.swift` 中有一小部分事件路由机制改写自 Ice，并按照 GPL-3.0 保留了完整归属，详见 [`NOTICE.md`](NOTICE.md)。
-
-Open Notch 是独立实现，不是 Bartender 或 Ice 的官方版本，也不代表 Apple、Microsoft 或 OneDrive。
-
-## 功能
-
-- 菜单栏项目发现、搜索以及 Visible / Hidden 管理。
-- 历史项目管理：即使应用当前没有运行，也可以提前配置它的显示状态。
-- 隐藏区展开、收起和恢复。
-- OneDrive 使用稳定的 Bundle ID 进行识别和持续同步，前端与其他 App 一视同仁。
-- 菜单栏图标菜单：展开隐藏区、扫描项目、打开设置、重启 Open Notch、退出。
-- 默认英文，可手动切换简体中文。
-- Light / Dark 外观模式。
-- 登录时打开与自动恢复菜单栏布局。
-- 外接显示器模式：外接屏可选择显示全部项目或沿用内建屏布局。
-- 辅助功能权限状态检查和系统设置快捷入口。
-
-在 Apple 的官方语境里，Mac 屏幕顶部叫 **菜单栏（menu bar）**，右侧这些图标叫 **菜单栏项目（menu bar items）**。中文用户也常把它叫作状态栏或顶栏，所以你也可以把 Open Notch 理解为 Mac 状态栏图标管理工具。
-
-## 工作方式
-
-Open Notch 的持续监测负责**观察**菜单栏项目；布局协调器只有在连续观察确认布局偏差后，才会请求移动。移动使用一次范围明确的 Accessibility Command-拖动事务，并在用户正在使用鼠标或键盘时延后。监测本身不会持续控制鼠标，也不会模拟随机鼠标移动。
-
-macOS 26 中，OneDrive 的状态项可能暂时由 Control Center 托管并失去稳定的 Accessibility 语义。Open Notch 会结合 OneDrive 的语义 Bundle Identifier、实时几何位置和本地持久绑定恢复逻辑身份；无法确认身份的匿名 Control Center 窗口不会被伪装成可管理项目。
-
-## 使用要求
-
-- Apple silicon Mac
-- macOS 14 或更高版本（已针对 macOS 26 进行验证）
-- 在“系统设置 > 隐私与安全性 > 辅助功能”中允许 Open Notch
-
-辅助功能权限是 macOS 允许应用读取其他进程菜单栏项目并执行明确拖动事务的系统入口。Open Notch 不会借此读取键盘内容、鼠标轨迹或其他应用的数据。
-
-## 安装与首次运行
-
-仓库当前提供可复现的本地构建流程。下载源码后运行：
+需要 Apple silicon（M 芯片）Mac、macOS 14+ 和 Apple Command Line Tools。Release 包只构建 arm64：
 
 ```zsh
-git clone https://github.com/woniuniuniu/open-notch.git
-cd open-notch
 ./build.sh
 ```
 
-脚本会生成 `build/Open Notch.app` 和 `build/Open Notch.zip`。将 App 移到 `/Applications` 后启动，在系统设置中授予辅助功能权限，再回到 Open Notch 的 General / 通用页面点击 **Recheck / 重新检查**。
+产物：
 
-本地构建使用 ad-hoc 签名，仅适合开发和个人测试。面向其他用户分发时，需要使用自己的 Developer ID 签名并完成 Apple notarization。
+- `build/OPEN-BAR-1.0.0-beta.zip`
 
-不要同时运行 Ice、Bartender 或其他菜单栏管理器；多个工具会互相移动状态栏项目，导致布局和权限诊断失真。
+`build.sh` 先运行核心单元测试，然后在系统临时目录中构建 arm64、生成 `.icns`、组装并验证签名，最后对 ZIP 解压复验。仓库位于云同步目录时，Finder/File Provider 会给 `.app` 写入额外元数据并破坏严格签名，因此构建目录只保留 ZIP，不保留可运行的 App。
+
+本地调试默认使用 ad-hoc 签名，只适合当前 Mac。对外发布必须设置 `OPEN_BAR_SIGN_IDENTITY` 为 Developer ID Application 证书，并完成 Apple notarization；否则其他用户可能被 Gatekeeper 拦截，即使程序本身可以运行。
+
+## 首次运行
+
+1. 运行 `./install-local.sh`，它会停止并删除旧 OPEN BAR / Open Notch App，再将稳定签名的唯一版本安装到 `~/Applications`。不要直接从云同步或仓库目录授权。
+2. 启动 `~/Applications/OPEN BAR.app`。
+3. 在“系统设置 > 隐私与安全性 > 辅助功能”允许 OPEN BAR。回到 App 后会自动检测生效。
+
+不建议与 Bartender、Ice 或其他菜单栏管理器同时运行，它们会竞争同一组系统状态。
 
 ## 开发
 
-项目只需要 Apple Command Line Tools，不要求提交一个完整的 Xcode 工程：
-
 ```zsh
-./build.sh
+swift run OpenBarCoreChecks
+swift build
 ```
 
-主要目录：
+- `Sources/OpenBarCore`：无 UI 的身份、策略、守护和 AI 排位引擎。
+- `Sources/OpenBar/Application`：App 生命周期和单一应用状态。
+- `Sources/OpenBar/Infrastructure`：系统扫描、macOS 适配器、持久化和诊断。
+- `Sources/OpenBar/UI`：原生 SwiftUI 工作界面。
+- `Tests/OpenBarCoreChecks`：无外部测试框架的稳定身份、双样本守护、布局和策略检查。
 
-```text
-Sources/OpenNotchApp.swift       应用入口与状态栏菜单
-Sources/SettingsView.swift       原生 SwiftUI 设置界面
-Sources/MenuBarDiscovery.swift   菜单栏项目发现与身份解析
-Sources/LayoutReconciler.swift   布局策略与 OneDrive 恢复协调
-Sources/MenuBarMoveEngine.swift  有界 Accessibility 移动事务
-Sources/TargetedEventRouter.swift Ice-derived 事件路由兼容层
-Resources/*.lproj                English / 简体中文本地化
-Tools/make_icon.swift             应用图标生成
-build.sh                          可复现构建、签名与打包
-```
+## 隐私
 
-## 隐私与安全
-
-Open Notch 的菜单栏管理完全在本机完成，不收集分析数据、不包含遥测或账号系统。只有用户主动点击 AI Organizer 的 Generate 时，应用才会向现有 AI 服务发送匿名安装 ID、语言、时区偏移、硬件型号、显示器几何信息，以及菜单栏项目名称、Bundle ID 和显示状态。不会发送序列号、屏幕内容、用户名或文件路径。设置和身份绑定保存在本机 `UserDefaults`。辅助功能仅用于发现菜单栏项目、读取必要的窗口几何信息，以及执行明确的兼容操作。
-
-请不要在 issue 或 pull request 中上传 Accessibility dump、屏幕截图、个人路径、凭据或其他机器特有信息。安全问题请参阅 [`SECURITY.md`](SECURITY.md)。
-
-## 兼容性与已知限制
-
-- macOS 不提供稳定的跨进程状态栏排序 API，因此系统更新或宿主应用重构仍可能改变行为。
-- 一次只能运行一个菜单栏管理器。
-- 某些系统或第三方项目可能没有可读的图标名称；Open Notch 会显示可确认的 Bundle Identifier，并避免把匿名 Control Center 窗口误报为项目。
-- 应用目前面向 Apple silicon 构建；Intel Mac 需要调整 `build.sh` 的编译目标后自行构建。
-
-## 常见问题
-
-### 为什么必须开启辅助功能？
-
-这是 macOS 对跨进程状态栏项目观察和拖动操作的系统授权。没有授权时，Open Notch 只能展示设置界面，不能可靠地管理其他应用的图标。
-
-### Open Notch 会一直控制鼠标吗？
-
-不会。只读发现和监测不合成鼠标事件；只有布局偏差被确认、且用户没有正在交互时，才会执行一次有界的 Command-拖动。
-
-### 为什么 OneDrive 需要单独处理？
-
-新版 macOS 可能让 OneDrive 菜单栏项由 Control Center 动态托管，窗口编号和标题会变化。Open Notch 用语义身份和持久绑定恢复它，而不是把临时窗口当成新项目。
-
-### 可以和 Ice 或 Bartender 一起运行吗？
-
-不建议。它们都会尝试改变同一组状态栏项目的位置，无法保证哪个工具的策略最终生效。
-
-## 许可证、归属与再发布义务
-
-Open Notch 项目整体使用 **GNU General Public License v3.0-only (GPL-3.0-only)**，完整文本见 [`LICENSE`](LICENSE)。如果你再发布或修改 Open Notch：
-
-1. 保留 GPL、版权、无担保和第三方归属声明。
-2. 对修改后的版本明确标注修改内容和日期。
-3. 按 GPL-3.0 提供对应源代码、构建脚本和许可证文本。
-4. `Sources/TargetedEventRouter.swift` 的 Ice 衍生部分继续适用 Ice 的版权和 GPL 归属要求。
-
-Ice 来源信息：
-
-- 项目：https://github.com/jordanbaird/Ice
-- 上游文件：`Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift`
-- 版权：Copyright (C) 2024-2025 Jordan Baird
-
-Bartender 是专有软件；它只是产品方向上的灵感来源，Open Notch 不包含 Bartender 源代码。Open Notch 按现状提供，不提供任何明示或暗示担保。
-
-## 参与贡献
-
-欢迎提交 issue、改进建议和 pull request。请先阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md)、[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) 和 [`NOTICE.md`](NOTICE.md)。
-
-本次 macOS 27 菜单栏兼容工作的重要贡献者：
-
-- [Joshua2046c](https://github.com/Joshua2046c)：MenuBarAgent 发现、隐藏、排序和设置交互修复。
-- 小红书@李山迎 Joshua：中文本地化贡献。
-
-项目地址：https://github.com/woniuniuniu/open-notch
+菜单栏扫描、布局策略、守护和诊断仍默认在本机完成。只有用户主动点击“AI 智能整理”时，OPEN BAR 才会把菜单栏项的名称、Bundle ID、当前分区，以及 Mac 型号与屏幕尺寸发送给推荐服务。不发送文件、菜单内容、序列号或用户输入；应用不含账号和分析 SDK。
