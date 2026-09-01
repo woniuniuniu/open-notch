@@ -63,28 +63,45 @@ private struct WindowTrafficLights: View {
                 symbol: "xmark",
                 label: L("Close window")
             ) {
-                activeWindow?.performClose(nil)
+                closeMainWindow()
             }
             WindowTrafficLight(
                 color: Color(hex: "#FEBC2E"),
                 symbol: "minus",
                 label: L("Minimize window")
             ) {
-                activeWindow?.miniaturize(nil)
+                minimizeMainWindow()
             }
             WindowTrafficLight(
                 color: Color(hex: "#28C840"),
                 symbol: "arrow.up.left.and.arrow.down.right",
                 label: L("Zoom window")
             ) {
-                activeWindow?.zoom(nil)
+                mainWindow?.zoom(nil)
             }
         }
         .frame(height: 14)
     }
 
-    private var activeWindow: NSWindow? {
-        NSApp.keyWindow ?? NSApp.mainWindow
+    private var mainWindow: NSWindow? {
+        NSApp.windows.first { $0.identifier?.rawValue == "OpenBar.Main" }
+    }
+
+    private func closeMainWindow() {
+        // OPEN BAR is a menu-bar utility. Closing its document window should
+        // hide the window while leaving the status item and app process alive.
+        mainWindow?.orderOut(nil)
+    }
+
+    private func minimizeMainWindow() {
+        guard let window = mainWindow else { return }
+        window.miniaturize(nil)
+        // Accessory apps cannot always create a Dock miniaturized window. In
+        // that case retain the expected button feedback by hiding the window;
+        // clicking OPEN BAR in the menu bar restores it immediately.
+        if !window.isMiniaturized {
+            window.orderOut(nil)
+        }
     }
 }
 

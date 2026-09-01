@@ -62,7 +62,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .environmentObject(PolicyStore.shared)
             let created = OpenBarWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 1040, height: 700),
-                styleMask: [.borderless, .resizable],
+                // Keep the surface borderless, but explicitly opt into the
+                // window capabilities used by our in-surface traffic lights.
+                // A borderless window otherwise reports itself as neither
+                // closable nor miniaturizable, making those actions no-ops.
+                styleMask: [.borderless, .resizable, .closable, .miniaturizable],
                 backing: .buffered,
                 defer: false
             )
