@@ -6,22 +6,76 @@ private final class OpenBarWindow: NSWindow {
     override var canBecomeMain: Bool { true }
 }
 
-private final class OpenBarHostingView<Content: View>: NSHostingView<Content> {
-    // Borderless windows do not get the normal titlebar drag region. Let
-    // unhandled content areas move the window while SwiftUI controls keep
-    // receiving their own mouse events.
-    override var mouseDownCanMoveWindow: Bool { true }
+private final class OpenBarDragStrip: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { self }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    private var dragStartScreenPoint: NSPoint?
+    private var dragStartWindowOrigin: NSPoint?
 
     override func mouseDown(with event: NSEvent) {
-        // Some SwiftUI hosting configurations do not consult
-        // mouseDownCanMoveWindow for a borderless window. Explicitly forward
-        // background clicks to AppKit's native window drag implementation.
-        if event.clickCount == 1, let window {
-            window.performDrag(with: event)
-            return
-        }
-        super.mouseDown(with: event)
+        guard event.type == .leftMouseDown, let window else { return }
+        dragStartScreenPoint = window.convertPoint(toScreen: event.locationInWindow)
+        dragStartWindowOrigin = window.frame.origin
+        NSCursor.closedHand.push()
     }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let window,
+              let dragStartScreenPoint,
+              let dragStartWindowOrigin
+        else { return }
+        let currentScreenPoint = window.convertPoint(toScreen: event.locationInWindow)
+        let delta = NSPoint(
+            x: currentScreenPoint.x - dragStartScreenPoint.x,
+            y: currentScreenPoint.y - dragStartScreenPoint.y
+        )
+        window.setFrameOrigin(NSPoint(
+            x: dragStartWindowOrigin.x + delta.x,
+            y: dragStartWindowOrigin.y + delta.y
+        ))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragStartScreenPoint = nil
+        dragStartWindowOrigin = nil
+        NSCursor.pop()
+    }
+}
+
+private final class OpenBarContentView: NSView {
+    private let hosting: NSView
+    private let dragStrip = OpenBarDragStrip()
+
+    init<Content: View>(rootView: Content) {
+        hosting = NSHostingView(rootView: rootView)
+        super.init(frame: .zero)
+        wantsLayer = true
+
+        hosting.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(hosting)
+        NSLayoutConstraint.activate([
+            hosting.leadingAnchor.constraint(equalTo: leadingAnchor),
+            hosting.trailingAnchor.constraint(equalTo: trailingAnchor),
+            hosting.topAnchor.constraint(equalTo: topAnchor),
+            hosting.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+
+        // AppKit drag surface: only the top blank strip is intercepted. The
+        // rest of the hosting view remains fully interactive for item drags.
+        dragStrip.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(dragStrip, positioned: .above, relativeTo: nil)
+        NSLayoutConstraint.activate([
+            dragStrip.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 84),
+            dragStrip.trailingAnchor.constraint(equalTo: trailingAnchor),
+            dragStrip.topAnchor.constraint(equalTo: topAnchor),
+            dragStrip.heightAnchor.constraint(equalToConstant: 28)
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }
 
 @main
@@ -79,11 +133,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             created.isOpaque = false
             created.backgroundColor = .clear
             created.hasShadow = true
-            created.isMovableByWindowBackground = true
+            // Window movement is handled only by the dedicated top strip in
+            // OpenBarContentView; never let clicks on content drag the window.
+            created.isMovableByWindowBackground = false
             created.collectionBehavior = [.managed, .moveToActiveSpace]
             created.isReleasedWhenClosed = false
             created.minSize = NSSize(width: 760, height: 560)
-            created.contentView = OpenBarHostingView(rootView: content)
+            created.contentView = OpenBarContentView(rootView: content)
             configureWindowSurface(created)
             created.center()
             window = created
