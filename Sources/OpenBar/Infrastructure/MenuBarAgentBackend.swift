@@ -66,7 +66,13 @@ final class MenuBarAgentBackend: MenuBarBackend {
         var allowedSystemItems = Set(0...8)
         var bundleVisibility: [String: Bool] = [:]
 
+        let liveIDs = Set(liveItems.map(\.id))
         for known in document.knownItems.values {
+            // Historical panel modules are not evidence of a standalone icon.
+            if known.semanticIdentifier.hasPrefix("module:"),
+               known.semanticIdentifier != "module:BentoBox", !liveIDs.contains(known.id) {
+                continue
+            }
             let policy = document.policies[known.id] ?? ItemPolicy()
             let visible = shouldShow(policy.section, expanded: expanded)
             if known.semanticIdentifier.hasPrefix("module:") {

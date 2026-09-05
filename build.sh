@@ -3,11 +3,11 @@ set -euo pipefail
 
 ROOT="${0:A:h}"
 BUILD="$ROOT/build"
-ZIP="$BUILD/OPEN-BAR-1.1.0.zip"
+ZIP="$BUILD/OPEN-BAR-1.1.1.zip"
 SCRATCH="${TMPDIR:-/tmp}/openbar-swiftpm-${UID}"
 STAGE="$(mktemp -d /tmp/OpenBar-release.XXXXXX)"
 APP="$STAGE/OPEN BAR.app"
-STAGED_ZIP="$STAGE/OPEN-BAR-1.1.0.zip"
+STAGED_ZIP="$STAGE/OPEN-BAR-1.1.1.zip"
 VERIFY_ROOT="$STAGE/verify"
 ICONSET="$STAGE/AppIcon.iconset"
 MASTER="$STAGE/AppIcon-1024.png"

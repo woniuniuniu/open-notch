@@ -1,4 +1,4 @@
-# OPEN BAR / 若栏 · 1.1.0
+# OPEN BAR / 若栏 · 1.1.1
 
 OPEN BAR （中文名：若栏）是一个原生、开源的 macOS 菜单栏管理器。这是一次完整的 1.0 beta 结构重写，旧 `open-notch` 代码不是它的结构基础。
 
@@ -39,7 +39,7 @@ macOS 27 当前按拥有者 Bundle ID 应用显示限制，因此同一 App 创�
 
 产物：
 
-- `build/OPEN-BAR-1.1.0.zip`
+- `build/OPEN-BAR-1.1.1.zip`
 
 `build.sh` 先运行核心单元测试，然后在系统临时目录中构建 arm64、生成 `.icns`、组装并验证签名，最后对 ZIP 解压复验。仓库位于云同步目录时，Finder/File Provider 会给 `.app` 写入额外元数据并破坏严格签名，因此构建目录只保留 ZIP，不保留可运行的 App。
 

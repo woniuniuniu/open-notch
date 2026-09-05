@@ -1,3 +1,12 @@
+# 1.1.1 - 2026-09-06
+
+- Present the combined system control as Menu Bar on macOS 27, retaining its double-toggle symbol.
+- Do not restore absent historical system modules (Bluetooth, Keyboard, Display, and others) as standalone menu bar entries. Historical application records remain available.
+- Exclude menu contents from discovery. Only actual menu extras are eligible; ordinary controls inside the system panel remain in that panel.
+- Ignore absent historical module policies when applying visibility.
+
+Validation: release compilation and signature checks; automated tests omitted as requested.
+
 # 1.1.0 - 2026-09-06
 
 - Preserve offline inventory and show current / remembered counts.

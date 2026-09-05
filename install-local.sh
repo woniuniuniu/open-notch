@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="${0:A:h}"
-ARCHIVE="$ROOT/build/OPEN-BAR-1.1.0.zip"
+ARCHIVE="$ROOT/build/OPEN-BAR-1.1.1.zip"
 INSTALL_ROOT="${OPEN_BAR_INSTALL_DIR:-$HOME/Applications}"
 DESTINATION="$INSTALL_ROOT/OPEN BAR.app"
 STAGE="$(mktemp -d /tmp/OpenBar-install.XXXXXX)"

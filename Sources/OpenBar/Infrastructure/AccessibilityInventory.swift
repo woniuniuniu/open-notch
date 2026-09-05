@@ -72,6 +72,8 @@ enum AccessibilityInventory {
                 visited.append(element)
                 let role = string(element, kAXRoleAttribute as CFString)
                 let subrole = string(element, kAXSubroleAttribute as CFString)
+                // Popup controls belong to the system panel, never the inventory.
+                guard role != kAXMenuRole else { return }
                 let menu = inMenu
                 if subrole == "AXMenuExtra" || (menu && role == kAXMenuBarItemRole) {
                     elements.append(element)
@@ -312,6 +314,7 @@ enum MenuBarItemPresentation {
             ("声音", "Sound"), ("音量", "Sound"), ("音频", "AudioVideoModule"),
             ("display", "Display"), ("显示器", "Display"), ("显示", "Display"),
             ("keyboard", "Keyboard"), ("键盘", "Keyboard"),
+            ("菜单栏", "BentoBox"),
             ("controlcenter", "BentoBox"), ("控制中心", "BentoBox"),
         ]
         return matches.first {
@@ -346,7 +349,9 @@ enum MenuBarItemPresentation {
         case "ScreenMirroring": L("Screen Mirroring")
         case "Display": L("Display")
         case "Keyboard": L("Keyboard")
-        case "BentoBox", "BentoBox-0", "AudioVideoModule": L("Control Center")
+        case "BentoBox", "BentoBox-0":
+            ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 ? L("Menu Bar") : L("Control Center")
+        case "AudioVideoModule": L("Sound")
         default: module
         }
     }

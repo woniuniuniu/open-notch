@@ -108,7 +108,11 @@ final class AppModel: ObservableObject {
         }
 
         let offline = store.document.knownItems.values
-            .filter { !liveIDs.contains($0.id) }
+            .filter {
+                !liveIDs.contains($0.id)
+                    && (!$0.semanticIdentifier.hasPrefix("module:")
+                        || $0.semanticIdentifier == "module:BentoBox")
+            }
             .map { known in
                 // A policy may outlive the status item that created it. Keep
                 // that record for the next time the item appears, but do not
