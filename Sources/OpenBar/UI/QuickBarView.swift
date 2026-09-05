@@ -11,13 +11,16 @@ struct QuickBarView: View {
         // workspace, but never put an offline historical record in the live
         // quick bar or claim it is available right now.
         model.quickBarItems.filter {
-            $0.isRunning && store.section(for: $0.id) != .shown
+            $0.isRunning && store.section(for: $0.id) == .hidden && $0.id != StatusBarController.toggleID
         }
     }
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
+                if hiddenItems.isEmpty {
+                    Text(L("No hidden items available")).font(.system(size: 12)).foregroundStyle(.secondary)
+                }
                 ForEach(hiddenItems) { item in
                     QuickBarItem(item: item)
                 }
@@ -34,10 +37,12 @@ struct QuickBarView: View {
 }
 
 private struct QuickBarItem: View {
+    @EnvironmentObject private var model: AppModel
     let item: ManagedMenuBarItem
     @StateObject private var hover = OpenBarHoverState()
 
     var body: some View {
+        Button { model.activateItem(item) } label: {
         Group {
             if let image = ApplicationIconResolver.shared.icon(for: item) {
                 Image(nsImage: image)
@@ -63,5 +68,6 @@ private struct QuickBarItem: View {
         .onHover { hover.isHovered = $0 }
         .help(item.localizedDisplayName)
         .zIndex(hover.isHovered ? 10 : 0)
+        }.buttonStyle(.plain)
     }
 }

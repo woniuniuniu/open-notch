@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="${0:A:h}"
-ARCHIVE="$ROOT/build/OPEN-BAR-1.0.0-beta.zip"
+ARCHIVE="$ROOT/build/OPEN-BAR-1.1.0.zip"
 INSTALL_ROOT="${OPEN_BAR_INSTALL_DIR:-$HOME/Applications}"
 DESTINATION="$INSTALL_ROOT/OPEN BAR.app"
 STAGE="$(mktemp -d /tmp/OpenBar-install.XXXXXX)"
@@ -37,6 +37,8 @@ codesign --verify --deep --strict "$DESTINATION"
 # Updating the local build terminates the previous instance above. Relaunch the
 # newly installed app so its menu-bar control is restored immediately instead
 # of silently disappearing until the user opens OPEN BAR again.
-open -- "$DESTINATION"
+if [[ "${OPEN_BAR_LAUNCH:-1}" == "1" ]]; then
+    open -- "$DESTINATION"
+fi
 
 echo "$DESTINATION"

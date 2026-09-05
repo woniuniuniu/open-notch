@@ -21,3 +21,6 @@ xcuserdata/
 .env.*
 !.env.example
 coverage/
+
+# Machine-specific local audit reports
+Reports/

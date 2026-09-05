@@ -31,7 +31,7 @@ final class MenuBarAgentBackend: MenuBarBackend {
     func setExpanded(_ expanded: Bool) {}
 
 
-    func scan() -> [LiveMenuBarItem] {
+    func scan() async -> [LiveMenuBarItem] {
         // The anonymous hosting frames exposed by MenuBarAgent are not
         // semantic status items. Their geometry can contain transient slots
         // and duplicated windows, so treating them as an ordering skeleton
@@ -39,7 +39,7 @@ final class MenuBarAgentBackend: MenuBarBackend {
         // inventory is the reliable source for the current item set; the app
         // intentionally follows that order and leaves native horizontal
         // ordering to macOS.
-        let result = AccessibilityInventory.menuExtras()
+        let result = await AccessibilityInventory.menuExtras()
             .compactMap(makeItem)
             .sorted { $0.frame.minX < $1.frame.minX }
 
@@ -52,7 +52,7 @@ final class MenuBarAgentBackend: MenuBarBackend {
         document: PolicyDocument,
         liveItems: [LiveMenuBarItem],
         reason: ApplyReason
-    ) -> BackendApplyResult {
+    ) async -> BackendApplyResult {
         guard !document.knownItems.isEmpty || !liveItems.isEmpty else {
             assessment.stop()
             return .init(accepted: false, message: L("Skipped an empty menu bar inventory"))
@@ -101,6 +101,7 @@ final class MenuBarAgentBackend: MenuBarBackend {
         // Keeping this harmless companion ID allowed makes the app's own
         // native control survive assessment on both layouts.
         allowedBundles.insert("com.woniuniuniu.OpenBar.StatusHost")
+        return await withCheckedContinuation { continuation in
         assessment.apply(
             allowedSystemItems: allowedSystemItems,
             allowedBundleIdentifiers: allowedBundles
@@ -112,14 +113,17 @@ final class MenuBarAgentBackend: MenuBarBackend {
                         "assessment applied; bundles=\(allowedBundles.count); system=\(allowedSystemItems.count)"
                     )
                     self.onAssessmentApplied()
+                    continuation.resume(returning: .init(accepted: true, message: L("Menu bar policy applied")))
                 case .unavailable:
                     Diagnostics.shared.append("assessment unavailable; layout unchanged")
+                    continuation.resume(returning: .init(accepted: false, message: L("Menu bar control is unavailable on this system")))
                 case .failed(let message):
                     Diagnostics.shared.append("assessment failed; \(message)")
+                    continuation.resume(returning: .init(accepted: false, message: message))
                 }
             }
         }
-        return .init(accepted: true, message: L("Menu bar policy applied"))
+        }
     }
 
     func stop() { assessment.stop() }
@@ -133,12 +137,14 @@ final class MenuBarAgentBackend: MenuBarBackend {
     }
 
     private func makeItem(_ extra: AccessibilityMenuExtra) -> LiveMenuBarItem? {
-        guard !extra.bundleIdentifier.isEmpty,
-              extra.bundleIdentifier != "com.apple.MenuBarAgent"
-        else { return nil }
+        guard !extra.bundleIdentifier.isEmpty else { return nil }
+        if extra.bundleIdentifier == "com.apple.MenuBarAgent",
+           MenuBarItemPresentation.moduleName([extra.identifier, extra.title, extra.detail].joined(separator: " ")) == nil {
+            return nil
+        }
 
         let rawTitle = firstNonEmpty(extra.title, extra.detail, extra.identifier)
-        if extra.bundleIdentifier == "com.apple.controlcenter" {
+        if extra.bundleIdentifier == "com.apple.controlcenter" || extra.bundleIdentifier == "com.apple.MenuBarAgent" {
             guard let module = MenuBarItemPresentation.moduleName(
                 [extra.identifier, extra.title, extra.detail].joined(separator: " ")
             ) else { return nil }

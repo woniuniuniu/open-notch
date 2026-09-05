@@ -20,9 +20,28 @@ enum AccessibilityInventory {
         return AXIsProcessTrustedWithOptions(options)
     }
 
-    static func menuExtras() -> [AccessibilityMenuExtra] {
-        guard AXIsProcessTrusted() else { return [] }
+    private struct ScanApp: Sendable {
+        let bundleIdentifier: String?
+        let processIdentifier: pid_t
+        let localizedName: String?
+        let isProhibited: Bool
+    }
+
+    @MainActor
+    static func menuExtras() async -> [AccessibilityMenuExtra] {
+        let applications = NSWorkspace.shared.runningApplications.map {
+            ScanApp(bundleIdentifier: $0.bundleIdentifier, processIdentifier: $0.processIdentifier,
+                    localizedName: $0.localizedName, isProhibited: $0.activationPolicy == .prohibited)
+        }
+        let screenFrames = NSScreen.screens.map(\.frame)
         let ownBundle = Bundle.main.bundleIdentifier ?? "com.woniuniuniu.OpenBar"
+        return await Task.detached(priority: .utility) {
+            collect(applications: applications, screenFrames: screenFrames, ownBundle: ownBundle)
+        }.value
+    }
+
+    private static func collect(applications: [ScanApp], screenFrames: [CGRect], ownBundle: String) -> [AccessibilityMenuExtra] {
+        guard AXIsProcessTrusted() else { return [] }
         let requiredAgents: Set<String> = [
             "com.apple.controlcenter",
             "com.apple.systemuiserver",
@@ -32,37 +51,44 @@ enum AccessibilityInventory {
         ]
         var result: [AccessibilityMenuExtra] = []
 
-        for app in NSWorkspace.shared.runningApplications {
+        for app in applications {
             guard let bundle = app.bundleIdentifier,
                   bundle != ownBundle,
-                  app.activationPolicy != .prohibited || requiredAgents.contains(bundle)
+                  !app.isProhibited || requiredAgents.contains(bundle)
             else { continue }
 
             let application = AXUIElementCreateApplication(app.processIdentifier)
             AXUIElementSetMessagingTimeout(application, 0.1)
-            var bars: [AXUIElement] = []
-            var usesExtrasAttribute = false
+            var roots = children(of: application).map { ($0, false) }
             if let raw = value(application, "AXExtrasMenuBar" as CFString),
                CFGetTypeID(raw) == AXUIElementGetTypeID() {
-                bars = [raw as! AXUIElement]
-                usesExtrasAttribute = true
-            } else {
-                bars = children(of: application).filter {
-                    string($0, kAXRoleAttribute as CFString) == kAXMenuBarRole
+                roots.insert((raw as! AXUIElement, true), at: 0)
+            }
+            var visited: [AXUIElement] = []
+            var elements: [AXUIElement] = []
+            func visit(_ element: AXUIElement, depth: Int, inMenu: Bool) {
+                guard depth <= 5, visited.count < 250,
+                      !visited.contains(where: { CFEqual($0, element) }) else { return }
+                visited.append(element)
+                let role = string(element, kAXRoleAttribute as CFString)
+                let subrole = string(element, kAXSubroleAttribute as CFString)
+                let menu = inMenu
+                if subrole == "AXMenuExtra" || (menu && role == kAXMenuBarItemRole) {
+                    elements.append(element)
+                    return
+                }
+                // Do not crawl application content or opened popup menus.
+                if depth == 0 || menu || role == kAXMenuBarRole || role == "AXGroup" || role == kAXWindowRole {
+                    for child in children(of: element) { visit(child, depth: depth + 1, inMenu: menu) }
                 }
             }
-
-            for bar in bars {
-                for element in children(of: bar) {
-                    if !usesExtrasAttribute,
-                       string(element, kAXSubroleAttribute as CFString) != "AXMenuExtra" {
-                        continue
-                    }
+            for (root, isExtras) in roots { visit(root, depth: 0, inMenu: isExtras) }
+            for element in elements {
                     guard let position = point(element, kAXPositionAttribute as CFString),
                           let size = size(element, kAXSizeAttribute as CFString),
                           size.width > 0,
                           size.height > 0,
-                          position.y < 100
+                          isMenuBarPosition(position, height: size.height, frames: screenFrames)
                     else { continue }
 
                     let descendants = children(of: element)
@@ -90,7 +116,6 @@ enum AccessibilityInventory {
                         detail: detail,
                         frame: CGRect(origin: position, size: size)
                     ))
-                }
             }
         }
         return removeMenuBarAgentDuplicates(result)
@@ -133,6 +158,36 @@ enum AccessibilityInventory {
             unique.append(frame)
         }
         return unique
+    }
+
+    static func isMenuBarPosition(_ position: CGPoint, height: CGFloat, frames: [CGRect] = NSScreen.screens.map(\.frame)) -> Bool {
+        let top = frames.first?.maxY ?? 0
+        return frames.contains { frame in
+            let y = top - frame.maxY
+            return abs(position.y - y) <= 50 && height <= 64
+        }
+    }
+
+    static func activate(_ item: LiveMenuBarItem) -> Bool {
+        guard AXIsProcessTrusted() else { return false }
+        let app = AXUIElementCreateApplication(item.hostPID)
+        AXUIElementSetMessagingTimeout(app, 0.15)
+        var roots = children(of: app)
+        if let raw = value(app, "AXExtrasMenuBar" as CFString), CFGetTypeID(raw) == AXUIElementGetTypeID() {
+            roots.insert(raw as! AXUIElement, at: 0)
+        }
+        var count = 0
+        func press(_ node: AXUIElement, depth: Int) -> Bool {
+            guard depth <= 6, count < 300 else { return false }
+            count += 1
+            if let position = point(node, kAXPositionAttribute as CFString),
+               let dimensions = size(node, kAXSizeAttribute as CFString),
+               sameFrame(CGRect(origin: position, size: dimensions), item.frame) {
+                if AXUIElementPerformAction(node, kAXPressAction as CFString) == .success { return true }
+            }
+            return children(of: node).contains { press($0, depth: depth + 1) }
+        }
+        return roots.contains { press($0, depth: 0) }
     }
 
     private static func removeMenuBarAgentDuplicates(
@@ -205,6 +260,7 @@ enum MenuBarItemPresentation {
             .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
             .lowercased()
 
+        if normalizedBundle == "com.apple.campo" { return "waveform" }
         let isSystemBundle = normalizedBundle.hasPrefix("com.apple.")
             || normalizedBundle.hasPrefix("module:")
         if isSystemBundle,
@@ -247,7 +303,6 @@ enum MenuBarItemPresentation {
             ("screenmirroring", "ScreenMirroring"), ("屏幕镜像", "ScreenMirroring"),
             ("nowplaying", "NowPlaying"), ("正在播放", "NowPlaying"), ("现在播放", "NowPlaying"),
             ("bentobox0", "BentoBox"), ("bentobox", "BentoBox"),
-            ("controlcenter", "BentoBox"), ("控制中心", "BentoBox"),
             ("wi-fi", "WiFi"), ("wifi", "WiFi"), ("wirelesslan", "WiFi"),
             ("无线局域网", "WiFi"), ("无线网络", "WiFi"),
             ("battery", "Battery"), ("电池", "Battery"),
@@ -257,6 +312,7 @@ enum MenuBarItemPresentation {
             ("声音", "Sound"), ("音量", "Sound"), ("音频", "AudioVideoModule"),
             ("display", "Display"), ("显示器", "Display"), ("显示", "Display"),
             ("keyboard", "Keyboard"), ("键盘", "Keyboard"),
+            ("controlcenter", "BentoBox"), ("控制中心", "BentoBox"),
         ]
         return matches.first {
             value.contains($0.0) || compact.contains($0.0.replacingOccurrences(of: "-", with: ""))

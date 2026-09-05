@@ -27,9 +27,9 @@ final class LegacyMenuBarBackend: MenuBarBackend {
         sections.setExpanded(expanded)
     }
 
-    func scan() -> [LiveMenuBarItem] {
+    func scan() async -> [LiveMenuBarItem] {
         let windows = WindowInventory.statusWindows(excluding: excludedWindowIDs)
-        var extras = AccessibilityInventory.menuExtras()
+        var extras = await AccessibilityInventory.menuExtras()
         let previousByWindow = Dictionary(
             previousItems.map { ($0.windowID, $0) },
             uniquingKeysWith: { current, _ in current }
@@ -97,7 +97,7 @@ final class LegacyMenuBarBackend: MenuBarBackend {
         document: PolicyDocument,
         liveItems: [LiveMenuBarItem],
         reason: ApplyReason
-    ) -> BackendApplyResult {
+    ) async -> BackendApplyResult {
         let targets: [LiveMenuBarItem]
         switch reason {
         case .user(let itemID):

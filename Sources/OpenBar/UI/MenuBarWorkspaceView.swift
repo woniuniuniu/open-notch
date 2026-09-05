@@ -4,6 +4,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct MenuBarWorkspaceView: View {
+    @EnvironmentObject private var store: PolicyStore
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
@@ -16,6 +17,7 @@ struct MenuBarWorkspaceView: View {
                 Hairline()
             }
 
+            ScrollView {
             VStack(spacing: 0) {
                 ForEach(Array(ItemSection.allCases.enumerated()), id: \.element) { index, section in
                     ItemLane(
@@ -29,6 +31,11 @@ struct MenuBarWorkspaceView: View {
                 Spacer(minLength: 0)
             }
 
+            }
+            if let error = store.persistenceError {
+                Text(L("Changes could not be saved") + ": " + error)
+                    .foregroundStyle(.red).padding(12)
+            }
             if let message = model.lastOperationMessage {
                 Hairline()
                 Text(message)
@@ -47,7 +54,7 @@ struct MenuBarWorkspaceView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(L("Your menu bar"))
                     .font(.system(size: 18, weight: .semibold))
-                Text(LF("%d current items", model.currentItemCount))
+                Text(LF("%d current items · %d remembered", model.currentItemCount, model.rememberedItemCount))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(OpenBarTheme.muted)
             }
@@ -239,13 +246,16 @@ private struct LaneIcon: View {
                         .disabled(target == section || !model.canManage)
                 }
             }
-            .help(item.localizedDisplayName)
+            .opacity(item.isRunning ? 1 : 0.4)
+            .help(item.localizedDisplayName + (item.isRunning ? "" : " · " + L("Not detected in the latest scan")))
             .zIndex(hover.isHovered ? 10 : 0)
     }
 
     @ViewBuilder
     private var icon: some View {
-        if let image = ApplicationIconResolver.shared.icon(for: item) {
+        if item.id == StatusBarController.toggleID {
+            Image(systemName: "chevron.down").frame(width: OpenBarTheme.laneIconSize, height: OpenBarTheme.laneIconSize)
+        } else if let image = ApplicationIconResolver.shared.icon(for: item) {
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)

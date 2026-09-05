@@ -63,6 +63,7 @@ final class AssessmentVisibilityController {
             if !isCurrent {
                 self.lock.unlock()
                 Self.invalidate(candidate)
+                completion(.failed("Superseded by a newer layout request"))
                 return
             }
             if let error {

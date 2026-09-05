@@ -201,3 +201,15 @@
 "Select a menu bar item to inspect it." = "选择一个菜单栏项目以查看详情。";
 "Drag items onto a visibility destination in the sidebar." = "把项目拖到侧栏的显示策略上即可改分区。";
 "Menu bar item" = "菜单栏项目";
+
+"%d current items · %d remembered" = "当前 %d 项 · 已记录 %d 项";
+
+"Not detected in the latest scan" = "本次未检测到";
+
+"Changes could not be saved" = "更改未能保存";
+
+"Unable to open this menu; try expanding hidden items" = "无法打开此菜单，请尝试展开隐藏项目";
+
+"Menu bar control is unavailable on this system" = "当前系统暂不支持菜单栏控制";
+
+"No hidden items available" = "暂无可用的隐藏项目";

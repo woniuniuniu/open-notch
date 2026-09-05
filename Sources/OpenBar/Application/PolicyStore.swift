@@ -55,7 +55,13 @@ final class PolicyStore: ObservableObject {
                 try? data.write(to: fileURL, options: .atomic)
             }
         }
+        if !UserDefaults.standard.bool(forKey: "OpenBar.Migrated1.1") {
+            try? FileManager.default.copyItem(at: fileURL, to: directory.appendingPathComponent("policies.before-1.1.json"))
+            document.policies[StatusBarController.toggleID] = ItemPolicy(section: .shown)
+            UserDefaults.standard.set(true, forKey: "OpenBar.Migrated1.1")
+        }
         migrateLegacyModuleAliases()
+        persist()
         UserDefaults.standard.set(document.preferences.language.rawValue, forKey: "OpenBar.Language")
     }
 

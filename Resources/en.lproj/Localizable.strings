@@ -201,3 +201,15 @@
 "Select a menu bar item to inspect it." = "Select a menu bar item to inspect it.";
 "Drag items onto a visibility destination in the sidebar." = "Drag items onto a visibility destination in the sidebar.";
 "Menu bar item" = "Menu bar item";
+
+"%d current items · %d remembered" = "%d current items · %d remembered";
+
+"Not detected in the latest scan" = "Not detected in the latest scan";
+
+"Changes could not be saved" = "Changes could not be saved";
+
+"Unable to open this menu; try expanding hidden items" = "Unable to open this menu; try expanding hidden items";
+
+"Menu bar control is unavailable on this system" = "Menu bar control is unavailable on this system";
+
+"No hidden items available" = "No hidden items available";

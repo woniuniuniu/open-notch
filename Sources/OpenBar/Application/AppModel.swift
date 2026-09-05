@@ -44,6 +44,7 @@ final class AppModel: ObservableObject {
     private var lastReportedScanCount: Int?
     private var lastGuardianSignature: String?
     private var lastLiveOrderSignature: String?
+    private var applyGeneration = 0
 
     private init() {}
 
@@ -61,10 +62,10 @@ final class AppModel: ObservableObject {
     /// Number of items in the latest live inventory. Historical policies are
     /// intentionally excluded so this value describes the current menu bar.
     var currentItemCount: Int {
-        liveItems.reduce(into: 0) { count, item in
-            if !item.isProtected { count += 1 }
-        }
+        liveItems.count
     }
+
+    var rememberedItemCount: Int { allManagedItems.count }
 
     var displayedItems: [ManagedMenuBarItem] {
         let source: [ManagedMenuBarItem]
@@ -139,11 +140,7 @@ final class AppModel: ObservableObject {
     func items(in section: ItemSection) -> [ManagedMenuBarItem] {
         allManagedItems.filter {
             store.section(for: $0.id) == section
-                // The workspace is a visual mirror of the current menu bar.
-                // Historical policies stay in storage for the next launch, but
-                // an app that is no longer exposing a status item must not
-                // create a phantom icon in any visible lane.
-                && $0.isRunning
+
         }
     }
 
@@ -237,14 +234,21 @@ final class AppModel: ObservableObject {
     }
 
     func refresh(reconcile: Bool = false, reason: ApplyReason = .guardian) {
+        Task { @MainActor [weak self] in await self?.performRefresh(reconcile: reconcile, reason: reason) }
+    }
+
+    private func performRefresh(reconcile: Bool = false, reason: ApplyReason = .guardian) async {
         guard !isScanning, let backend else { return }
         if !reconcile { lastOperationMessage = L("Scanning menu bar") }
         isScanning = true
         let previousPermission = hasAccessibilityPermission
         hasAccessibilityPermission = AccessibilityInventory.isTrusted()
-        if previousPermission != hasAccessibilityPermission { configureTimer() }
+        if previousPermission != hasAccessibilityPermission {
+            configureTimer()
+            if !hasAccessibilityPermission { schedulePermissionChecks() }
+        }
         let knownIDsBeforeScan = Set(store.document.knownItems.keys)
-        var scanned = backend.scan().filter { !$0.isProtected }
+        var scanned = await backend.scan().filter { !$0.isProtected }
         // The app's own control is a normal native status item, but the
         // inventory intentionally excludes the managing process to avoid
         // feeding it back into visibility policy. Add this one UI record only
@@ -301,6 +305,18 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func activateItem(_ item: ManagedMenuBarItem) {
+        if item.id == StatusBarController.toggleID { openWindow?(); return }
+        guard let live = item.liveItem else {
+            lastOperationMessage = L("Not detected in the latest scan")
+            return
+        }
+        statusBar?.hideQuickBar()
+        if !AccessibilityInventory.activate(live) {
+            lastOperationMessage = L("Unable to open this menu; try expanding hidden items")
+        }
+    }
+
     func rescan() {
         guard !isScanning else { return }
         refresh(reconcile: false)
@@ -316,13 +332,14 @@ final class AppModel: ObservableObject {
         lastOperationMessage = L("Applying menu bar layout")
         // Refresh first so a newly launched status item is included, then
         // apply the saved policy even when the background guardian is off.
-        refresh(reconcile: false)
-        guard !isScanning else { return }
-        apply(reason: .startup)
+        Task { @MainActor in
+            await performRefresh(reconcile: false)
+            apply(reason: .startup)
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             guard let self else { return }
             self.refresh(reconcile: false)
-            self.lastOperationMessage = L("Menu bar policy applied")
+
         }
     }
 
@@ -330,6 +347,13 @@ final class AppModel: ObservableObject {
         guard canManage else {
             lastOperationMessage = L("Accessibility permission is required")
             addActivity(.warning, L("Accessibility permission is required"))
+            return
+        }
+        guard let item = managedItem(id: id) else { return }
+        if item.liveItem?.isProtected == true || id == StatusBarController.toggleID {
+            store.setSection(section, for: id)
+            statusBar?.update(expanded: isExpanded)
+            lastOperationMessage = L("Menu bar policy applied")
             return
         }
         var orderedIDs = Dictionary(uniqueKeysWithValues: ItemSection.allCases.map { ($0, [String]()) })
@@ -385,7 +409,7 @@ final class AppModel: ObservableObject {
         guard !isAIPlacementLoading else { return }
         // Only currently running items participate in a fresh AI reset. Closed
         // historical records keep their saved policy until they appear again.
-        let items = allManagedItems.filter(\.isRunning)
+        let items = allManagedItems.filter { $0.isRunning && $0.liveItem?.isProtected != true }
         guard !items.isEmpty else {
             lastOperationMessage = L("No menu bar items to arrange")
             return
@@ -398,11 +422,8 @@ final class AppModel: ObservableObject {
 
         Task { [weak self] in
             guard let self else { return }
-            // Every AI run is a fresh reset. Previous AI visibility decisions
-            // must never become the next run's baseline, otherwise running AI
-            // twice appears to do nothing. Treat every currently running item
-            // as restored to Shown, then ask for a brand-new recommendation.
-            let resetSectionForID: (String) -> ItemSection = { _ in .shown }
+            // Preserve actual sections in the Before preview.
+            let resetSectionForID: (String) -> ItemSection = { self.store.section(for: $0) }
             do {
                 let result = try await AIPlacementClient.request(
                     items: items,
@@ -426,7 +447,7 @@ final class AppModel: ObservableObject {
                             id: $0.id,
                             name: $0.displayName,
                             bundleIdentifier: $0.bundleIdentifier,
-                            currentSection: .shown
+                            currentSection: self.store.section(for: $0.id)
                         )
                     },
                     maxShownItems: capacity
@@ -454,7 +475,7 @@ final class AppModel: ObservableObject {
         store.applyAIPlacement(proposal.decisions)
         apply(reason: .aiPlacement)
         aiProposal = nil
-        addActivity(.success, L("AI visibility placement applied"))
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             self?.refresh(reconcile: false)
         }
@@ -476,6 +497,7 @@ final class AppModel: ObservableObject {
     func setGuardianEnabled(_ enabled: Bool) {
         store.setGuardianEnabled(enabled)
         driftTracker.reset()
+        lastGuardianSignature = nil
         configureTimer()
         if enabled {
             refresh(reconcile: true, reason: .startup)
@@ -549,13 +571,21 @@ final class AppModel: ObservableObject {
         if case .guardian = reason {
             let signature = guardianSignature()
             guard signature != lastGuardianSignature else { return }
-            lastGuardianSignature = signature
+
         }
-        let result = backend.apply(
+        applyGeneration += 1
+        let generation = applyGeneration
+        let signature = guardianSignature()
+        Task { @MainActor [weak self] in
+        guard let self else { return }
+        let result = await backend.apply(
             document: store.document,
             liveItems: liveItems,
             reason: reason
         )
+        guard generation == self.applyGeneration else { return }
+        if result.accepted { self.lastGuardianSignature = signature }
+        else { self.lastGuardianSignature = nil }
         // Reassert OPEN BAR's own status item immediately after every backend
         // visibility operation. It must never be swallowed by an AI plan.
         statusBar?.update(expanded: isExpanded)
@@ -567,6 +597,7 @@ final class AppModel: ObservableObject {
         lastOperationMessage = result.message
         addActivity(result.accepted ? .success : .warning, result.message)
         Diagnostics.shared.append("apply accepted=\(result.accepted); message=\(result.message)")
+        }
     }
 
     private func filteredItems(
@@ -618,10 +649,18 @@ final class AppModel: ObservableObject {
         for name in [
             NSWorkspace.didLaunchApplicationNotification,
             NSWorkspace.didTerminateApplicationNotification,
+            NSWorkspace.didWakeNotification,
+            NSWorkspace.activeSpaceDidChangeNotification,
         ] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in
+                    self?.lastGuardianSignature = nil
                     self?.refresh(reconcile: self?.store.document.preferences.guardianEnabled ?? false)
+                    for delay in [1.0, 3.0, 8.0] {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                            self?.refresh(reconcile: true)
+                        }
+                    }
                 }
             })
         }

@@ -3,11 +3,11 @@ set -euo pipefail
 
 ROOT="${0:A:h}"
 BUILD="$ROOT/build"
-ZIP="$BUILD/OPEN-BAR-1.0.0-beta.zip"
+ZIP="$BUILD/OPEN-BAR-1.1.0.zip"
 SCRATCH="${TMPDIR:-/tmp}/openbar-swiftpm-${UID}"
 STAGE="$(mktemp -d /tmp/OpenBar-release.XXXXXX)"
 APP="$STAGE/OPEN BAR.app"
-STAGED_ZIP="$STAGE/OPEN-BAR-1.0.0-beta.zip"
+STAGED_ZIP="$STAGE/OPEN-BAR-1.1.0.zip"
 VERIFY_ROOT="$STAGE/verify"
 ICONSET="$STAGE/AppIcon.iconset"
 MASTER="$STAGE/AppIcon-1024.png"
@@ -19,8 +19,10 @@ if [[ "${OPEN_BAR_DISTRIBUTION:-0}" == "1" && "$SIGN_IDENTITY" == "-" ]]; then
     exit 2
 fi
 
-echo "[1/5] Testing core"
-swift run --package-path "$ROOT" --scratch-path "$SCRATCH" OpenBarCoreChecks
+echo "[1/5] Preparing build"
+if [[ "${OPEN_BAR_SKIP_TESTS:-0}" != "1" ]]; then
+    swift run --package-path "$ROOT" --scratch-path "$SCRATCH" OpenBarCoreChecks
+fi
 
 echo "[2/5] Building arm64 release binary"
 ARCH_SCRATCH="$SCRATCH/arm64"

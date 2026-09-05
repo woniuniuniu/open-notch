@@ -258,7 +258,7 @@ enum AIPlacementClient {
         var endpoint = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         while endpoint.hasSuffix("/") { endpoint.removeLast() }
         if !endpoint.hasSuffix("/chat/completions") { endpoint += "/chat/completions" }
-        guard let url = URL(string: endpoint) else { throw AIPlacementError.invalidEndpoint }
+        guard let url = URL(string: endpoint), url.scheme == "https", url.host != nil else { throw AIPlacementError.invalidEndpoint }
 
         let requestBody = DeepSeekRequest(
             model: model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "deepseek-chat" : model,
@@ -294,11 +294,11 @@ enum AIPlacementClient {
             throw AIPlacementError.emptyPlan
         }
 
-        let responseByID = Dictionary(uniqueKeysWithValues: (plan.items ?? []).map { ($0.id, $0) })
-        let explicitOrder = Dictionary(uniqueKeysWithValues: (plan.orderedIDs ?? []).enumerated().map { ($0.element, $0.offset) })
+        let responseByID = Dictionary((plan.items ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let explicitOrder = Dictionary((plan.orderedIDs ?? []).enumerated().map { ($0.element, $0.offset) }, uniquingKeysWith: { first, _ in first })
         let hidden = Set(plan.hiddenIDs ?? [])
         let alwaysHidden = Set(plan.alwaysHiddenIDs ?? [])
-        let reasons = Dictionary(uniqueKeysWithValues: (plan.reasons ?? []).map { ($0.id, $0.reason) })
+        let reasons = Dictionary((plan.reasons ?? []).map { ($0.id, $0.reason) }, uniquingKeysWith: { first, _ in first })
 
         var decisions = [AIPlacementDecision]()
         for (currentOrder, item) in payloadItems.enumerated() {

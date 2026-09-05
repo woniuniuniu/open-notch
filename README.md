@@ -1,4 +1,4 @@
-# OPEN BAR / 若栏 · 1.0 beta
+# OPEN BAR / 若栏 · 1.1.0
 
 OPEN BAR （中文名：若栏）是一个原生、开源的 macOS 菜单栏管理器。这是一次完整的 1.0 beta 结构重写，旧 `open-notch` 代码不是它的结构基础。
 
@@ -8,7 +8,7 @@ OPEN BAR （中文名：若栏）是一个原生、开源的 macOS 菜单栏管�
 - 稳定身份解析：OneDrive 等标题和窗口会变的项目使用 Bundle ID 级身份。
 - 布局守护：只有连续两次确认偏移后才修复，并设有冷却期。
 - 新菜单栏项目：应用启动或菜单栏项目出现时自动登记，默认放入“显示”，并按 macOS 当前真实顺序插入；已经记录但暂未运行的 App 会保留为离线项目，启动后原位更新。
-- 状态栏向下箭头会打开紧凑半透明快捷栏，可直接搜索并查看全部项目。
+- Quick Bar opens below the native arrow, activates available hidden menus, and dismisses with Escape or Command-W.
 - AI 一键排位：用户主动点击后，会结合 Mac 型号、内置屏幕物理尺寸、分辨率和右侧可用宽度生成方案；远端不可用时会明确标记并回退到本地方案。
 - AI 方案会同时决定三分区与顺序，先显示 Before / After 审核，只有用户确认后才应用。
 - 中英文、浅色/深色、登录启动、状态栏快捷菜单、可导出诊断。
@@ -39,7 +39,7 @@ macOS 27 当前按拥有者 Bundle ID 应用显示限制，因此同一 App 创�
 
 产物：
 
-- `build/OPEN-BAR-1.0.0-beta.zip`
+- `build/OPEN-BAR-1.1.0.zip`
 
 `build.sh` 先运行核心单元测试，然后在系统临时目录中构建 arm64、生成 `.icns`、组装并验证签名，最后对 ZIP 解压复验。仓库位于云同步目录时，Finder/File Provider 会给 `.app` 写入额外元数据并破坏严格签名，因此构建目录只保留 ZIP，不保留可运行的 App。
 

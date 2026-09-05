@@ -29,7 +29,7 @@ enum WindowInventory {
                 width: bounds["Width"] ?? 0,
                 height: bounds["Height"] ?? 0
             )
-            guard frame.width > 0, frame.height > 0, frame.minY < 100 else { return nil }
+            guard frame.width > 0, frame.height > 0, AccessibilityInventory.isMenuBarPosition(frame.origin, height: frame.height) else { return nil }
             let pid = rawPID.int32Value
             let app = NSRunningApplication(processIdentifier: pid)
             return RawStatusWindow(

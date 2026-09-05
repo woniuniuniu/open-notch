@@ -10,12 +10,12 @@ protocol MenuBarBackend: AnyObject {
     var excludedWindowIDs: Set<CGWindowID> { get }
 
     func setExpanded(_ expanded: Bool)
-    func scan() -> [LiveMenuBarItem]
+    func scan() async -> [LiveMenuBarItem]
     func apply(
         document: PolicyDocument,
         liveItems: [LiveMenuBarItem],
         reason: ApplyReason
-    ) -> BackendApplyResult
+    ) async -> BackendApplyResult
     func stop()
 }
 

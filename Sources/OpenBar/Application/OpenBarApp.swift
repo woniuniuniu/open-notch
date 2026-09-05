@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var dragStartWindowOrigin: NSPoint?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installMainMenu()
         terminateDuplicateInstances()
         AppModel.shared.start { [weak self] in self?.showWindow() }
         showWindow()
@@ -162,6 +163,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return event
             }
         }
+    }
+
+    private func installMainMenu() {
+        let menu = NSMenu()
+        let applicationItem = NSMenuItem()
+        let applicationMenu = NSMenu(title: "OPEN BAR")
+        let quit = NSMenuItem(title: L("Quit OPEN BAR"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        applicationMenu.addItem(quit)
+        applicationItem.submenu = applicationMenu
+        menu.addItem(applicationItem)
+        let windowItem = NSMenuItem()
+        let windowMenu = NSMenu(title: L("Window"))
+        let close = NSMenuItem(title: L("Close Window"), action: #selector(closeFrontWindow), keyEquivalent: "w")
+        close.target = self
+        windowMenu.addItem(close)
+        windowItem.submenu = windowMenu
+        menu.addItem(windowItem)
+        NSApp.mainMenu = menu
+    }
+
+    @objc private func closeFrontWindow() {
+        (NSApp.keyWindow ?? window)?.close()
     }
 
     private func terminateDuplicateInstances() {

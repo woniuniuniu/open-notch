@@ -1,3 +1,16 @@
+# 1.1.0 - 2026-09-06
+
+- Preserve offline inventory and show current / remembered counts.
+- Scan Accessibility off the UI thread; retry after launches and wake.
+- Improve system module detection and display geometry filtering.
+- Honor native toggle sections; migrate the app control to Shown once.
+- Anchor Quick Bar to the native button, activate menus through Accessibility, and exclude Always Hidden items.
+- Close windows with Command-W without terminating the menu bar app.
+- Handle duplicate AI IDs, preserve the actual Before layout, and report asynchronous layout results.
+- Add scrollable lanes and persistence error feedback.
+
+Validation: release compilation and signature checks. Automated tests omitted at the maintainer's request. The download is ad-hoc signed and is not Apple notarized.
+
 # Changelog
 
 ## 1.0.0-beta · 2026-09-01

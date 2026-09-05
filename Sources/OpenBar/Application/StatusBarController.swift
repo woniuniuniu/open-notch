@@ -3,6 +3,8 @@ import Foundation
 
 @MainActor
 final class StatusBarController: NSObject {
+    static let toggleID = "status:com.woniuniuniu.OpenBar::OpenBar.Toggle"
+
     private enum AutosaveName {
         // A fresh name prevents a stale position from an earlier experimental
         // build from placing the native item in MenuBarAgent's hidden slot.
@@ -48,7 +50,7 @@ final class StatusBarController: NSObject {
     var toggleMenuBarItem: LiveMenuBarItem? {
         let frame = statusItemFrame() ?? estimatedStatusItemFrame
         return LiveMenuBarItem(
-            id: "status:com.woniuniuniu.OpenBar::OpenBar.Toggle",
+            id: Self.toggleID,
             windowID: 0,
             hostPID: ProcessInfo.processInfo.processIdentifier,
             hostBundleIdentifier: Bundle.main.bundleIdentifier ?? "com.woniuniuniu.OpenBar",
@@ -66,6 +68,8 @@ final class StatusBarController: NSObject {
     func update(expanded: Bool) {
         self.expanded = expanded
         updateIcon()
+        let section = model.store.section(for: Self.toggleID)
+        statusItem.isVisible = section == .shown || (section == .hidden && expanded)
         boundaryItem.length = 0
         if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 {
             // Keep the hidden boundary as a one-pixel, mouse-transparent
@@ -81,14 +85,13 @@ final class StatusBarController: NSObject {
         legacySections?.setExpanded(expanded)
     }
 
-    func requestMenuBarPositionRefresh() {}
+    func hideQuickBar() { panelController.hide() }
 
     /// MenuBarAgent can rebuild the native row after an assessment assertion
     /// is activated. Reassert visibility after that rebuild so the ordinary
     /// OPEN BAR status item is not left in the off-screen overflow slot.
     func reassertNativeItem() {
-        statusItem.isVisible = true
-        updateIcon()
+        update(expanded: model.isExpanded)
     }
 
     func stop() {
@@ -128,7 +131,7 @@ final class StatusBarController: NSObject {
         if NSApp.currentEvent?.type == .rightMouseUp { showMenu() }
         else if panelVisible { panelController.hide() }
         else {
-            panelController.show()
+            panelController.show(anchor: statusItemFrame())
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
                 self?.model.refresh(reconcile: false)
             }
@@ -136,6 +139,7 @@ final class StatusBarController: NSObject {
     }
 
     private func showMenu() {
+        panelController.hide()
         let menu = NSMenu(title: "OPEN BAR")
         addItem(to: menu, title: expanded ? L("Collapse Hidden Items") : L("Expand Hidden Items"),
                 symbol: expanded ? "eye.slash" : "eye", action: #selector(toggleExpanded))
